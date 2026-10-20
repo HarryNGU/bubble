@@ -18,6 +18,8 @@ final class UIModel: ObservableObject {
     @Published var systemAudio = Settings.systemAudio { didSet { Settings.systemAudio = systemAudio } }
     @Published var countdown = Settings.countdown { didSet { Settings.countdown = countdown } }
     @Published var sounds = Settings.sounds { didSet { Settings.sounds = sounds } }
+    @Published var autoName = Settings.autoName { didSet { Settings.autoName = autoName } }
+    @Published var nameFromSpeech = Settings.nameFromSpeech { didSet { Settings.nameFromSpeech = nameFromSpeech } }
     @Published var shortcutLabel = Settings.hotKeyLabel
     @Published var capturingShortcut = false
     @Published var micLevel: Float = 0      // 0...1 while recording
@@ -312,6 +314,10 @@ struct HomeView: View {
                     }
                 }
                 ToggleRow(title: "Sound effects", subtitle: "A soft pop when recording starts and ends", isOn: $model.sounds)
+                Divider().opacity(0.5)
+                ToggleRow(title: "Name videos automatically", subtitle: "From the page or window you recorded", isOn: $model.autoName)
+                ToggleRow(title: "Use what you said", subtitle: "Adds the topics you talked about. Runs on your Mac.", isOn: $model.nameFromSpeech)
+                    .disabled(!model.autoName).opacity(model.autoName ? 1 : 0.45)
             }
         }
     }
@@ -496,8 +502,9 @@ struct RecentRow: View {
                 .frame(width: 64, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.date.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12, weight: .medium))
-                    Text(item.duration.isEmpty ? " " : item.duration).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(Namer.displayTitle(of: item.url)).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Text([item.date.formatted(date: .abbreviated, time: .shortened), item.duration].filter { !$0.isEmpty }.joined(separator: "  ·  "))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: "arrow.up.forward.square").foregroundStyle(.secondary).opacity(hover ? 1 : 0)

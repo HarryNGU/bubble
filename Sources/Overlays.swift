@@ -173,8 +173,9 @@ struct CountdownView: View {
 
 /// A small card at the top of the screen confirming the save.
 func showSavedToast(on screen: NSScreen, url: URL) {
+    let title = Namer.displayTitle(of: url)
     let model = ToastModel()
-    let host = NSHostingView(rootView: SavedToast(model: model, name: url.deletingPathExtension().lastPathComponent))
+    let host = NSHostingView(rootView: SavedToast(model: model, name: title))
     let size = host.fittingSize
     let f = screen.visibleFrame
     let panel = NSPanel(contentRect: NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height - 16, width: size.width, height: size.height),
@@ -207,7 +208,8 @@ struct SavedToast: View {
                 Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Recording saved").font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                Text("Saved as “\(name)”").font(.system(size: 13.5, weight: .semibold, design: .rounded)).lineLimit(1)
+                    .frame(maxWidth: 380, alignment: .leading)
                 Text("Copied to clipboard. Paste it anywhere.").font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.7))
             }
         }

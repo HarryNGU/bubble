@@ -24,6 +24,9 @@ enum Settings {
     static var systemAudio: Bool { get { bool("systemAudio", false) } set { d.set(newValue, forKey: "systemAudio") } }
     /// Chosen microphone's unique ID; empty = the Mac's current default input.
     static var micDevice: String { get { d.string(forKey: "micDevice") ?? "" } set { d.set(newValue, forKey: "micDevice") } }
+    /// Name each recording from the page/window title (and, if allowed, what you said).
+    static var autoName: Bool { get { bool("autoName", true) } set { d.set(newValue, forKey: "autoName") } }
+    static var nameFromSpeech: Bool { get { bool("nameFromSpeech", true) } set { d.set(newValue, forKey: "nameFromSpeech") } }
     static var sounds: Bool { get { bool("sounds", true) } set { d.set(newValue, forKey: "sounds") } }
     /// Global start/stop shortcut: Carbon key code + Carbon modifier mask, and how to show it.
     /// Defaults to Option-Shift-R (kVK_ANSI_R = 15, optionKey|shiftKey = 0x0A00).

@@ -58,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var activeSince: Date?          // nil while paused
     private var accumulated: TimeInterval = 0
     private var restarting = false
+    private var recordingContext: (title: String?, app: String?) = (nil, nil)  // captured at start, for naming
+    private var recordingStartedAt = Date()
     private var selftestSeconds: Double?
     private var selftestRestarted = false
 
@@ -366,6 +368,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func beginCapture(on screen: NSScreen, target: CaptureSource) {
         Sounds.start()  // finishes before the first frame is written, so it isn't in the video
+        recordingContext = Namer.context(for: target)
+        recordingStartedAt = Date()
         lastHeard = Date()
         model.micSilent = false
         model.micLevel = 0
@@ -455,13 +459,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             start()
             return
         }
-        guard let url else { showLauncher(); return }
-        guard !CommandLine.arguments.contains("--selftest") else { return }
+        guard var url else { showLauncher(); return }
+        let testing = CommandLine.arguments.contains("--selftest")
+
+        // 1. Instantly: name it after what was recorded.
+        let context = recordingContext
+        if Settings.autoName, let named = Namer.rename(url, to: Namer.title(context: context.title, keywords: [], app: context.app),
+                                                       recordedAt: recordingStartedAt) {
+            url = named
+        }
+        if !testing {
+            copyToClipboard(url)
+            showSavedToast(on: NSScreen.underMouse, url: url)
+            revealInFinder(url)
+        }
+        model.refreshRecents()
+
+        // 2. A few seconds later: add the topics you talked about (on-device speech recognition).
+        guard Settings.autoName, Settings.nameFromSpeech, Settings.mic else { return }
+        let started = recordingStartedAt
+        Task { @MainActor in
+            guard let transcript = await Namer.transcribe(url) else { return }
+            let words = Namer.keywords(from: transcript)
+            log("naming: \(transcript.split(separator: " ").count) words heard, topics \(words)")
+            guard !words.isEmpty else { return }
+            let better = Namer.title(context: context.title, keywords: words, app: context.app)
+            guard better != Namer.displayTitle(of: url), let renamed = Namer.rename(url, to: better, recordedAt: started) else { return }
+            if !testing { copyToClipboard(renamed) }
+            model.refreshRecents()
+        }
+    }
+
+    private func copyToClipboard(_ url: URL) {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.writeObjects([url as NSURL])
-        showSavedToast(on: NSScreen.underMouse, url: url)
-        revealInFinder(url)
     }
 
     /// Opens Bubble Recordings in Finder with the new video selected, and brings Finder to

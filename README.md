@@ -12,11 +12,12 @@ No account, no uploads, no subscription.
 - **Recording pill.** Timer, live mic level (warns you if the mic hears nothing), pause/resume, restart, discard and done. It never appears in the video.
 - **Countdown** that tints exactly what will be recorded, with start and stop sounds.
 - **Your style.** Six colour themes and a customisable global shortcut.
+- **Smart names.** Each video is named straight away after the page or window you recorded ("Quarterly Report · 20 Oct 18.14.mp4"), then refined with the topics you talked about, using Apple's on-device speech recognition.
 - **Done means done.** The video lands in `~/Desktop/Bubble Recordings`, opens in Finder and is copied to your clipboard, ready to paste into email or chat.
 
 ## Privacy
 
-Bubble has no network code. It doesn't upload, sync, phone home or collect analytics. Recordings, settings and the log file (`~/Library/Logs/Bubble.log`) stay on your Mac.
+Bubble has no network code. It doesn't upload, sync, phone home or collect analytics. Speech recognition for naming runs on-device only (if your Mac can't do it on-device, that step is skipped). Recordings, settings and the log file (`~/Library/Logs/Bubble.log`) stay on your Mac.
 
 ## Requirements
 
@@ -53,6 +54,7 @@ If the menu bar icon is hidden behind the notch, hold Command and drag it toward
 | `Sources/Picker.swift` | The hover-to-pick overlay |
 | `Sources/Camera.swift` | Camera bubble and background effects (Vision + Core Image) |
 | `Sources/Mic.swift`, `Sources/Denoiser.swift` | Microphone capture and the spectral noise reducer |
+| `Sources/Namer.swift` | Automatic titles from the page/window and on-device speech recognition |
 | `Sources/UI.swift`, `Sources/Overlays.swift` | SwiftUI window, recording pill, countdown, toast |
 
 For testing: `Bubble --selftest 6 [screen|area|window|chrome] [pause|restart]` records without the countdown; `--pickertest` and `--countdowntest` show those overlays.

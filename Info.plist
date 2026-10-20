@@ -26,6 +26,8 @@
     <string>Bubble shows your camera in a round bubble on top of your screen recording.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Bubble lists your Chrome tabs and switches to the one you want to record.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Bubble listens to your finished recording, on your Mac, to suggest a title. Nothing is sent anywhere.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Bubble records your voice with your screen recording.</string>
 </dict>
