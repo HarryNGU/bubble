@@ -57,6 +57,10 @@ If the menu bar icon is hidden behind the notch, hold Command and drag it toward
 
 For testing: `Bubble --selftest 6 [screen|area|window|chrome] [pause|restart]` records without the countdown; `--pickertest` and `--countdowntest` show those overlays.
 
+## Contributing
+
+Issues and pull requests are welcome. Please keep Bubble local-first: no network calls, accounts or analytics.
+
 ## Licence
 
 MIT. Fork it, change it, ship it.
