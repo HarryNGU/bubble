@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let bubble = CameraBubble()
     private let recorder = Recorder()
+    private let dictation = DictationController()
     private var controls: ControlBar!
     private var recording = false
     private var busy = false
@@ -89,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         buildMainMenu()
         buildLauncher()
         registerHotKeys()
+        dictation.start()
         log("launched; screen access = \(CGPreflightScreenCaptureAccess())")
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
@@ -164,10 +166,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onDiscard = { [weak self] in self?.stop(discard: true) }
         model.onDone = { [weak self] in self?.stop(discard: false) }
         model.onCaptureShortcut = { [weak self] in self?.captureShortcut() }
+        model.onDictate = { [weak self] in self?.dictation.toggle() }
+        model.onAllowAccessibility = {
+            Inserter.requestTrust()
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        }
     }
 
     private func buildLauncher() {
-        let host = NSHostingView(rootView: HomeView(model: model))
+        let host = NSHostingView(rootView: HomeView(model: model, dictation: dictation.model))
         launcher = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 800),
                             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                             backing: .buffered, defer: false)
@@ -236,6 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(ai)
         }
         menu.addItem(.separator())
+        menu.addItem(item(dictation.model.phase == .listening ? "Finish Dictation   ⌥⌥" : "Dictate   ⌥⌥", #selector(dictateClicked)))
+        menu.addItem(item("Copy Last Dictation", #selector(copyLastDictation), enabled: !dictation.model.last.isEmpty))
+        menu.addItem(.separator())
         menu.addItem(item("Camera Bubble", #selector(toggleCamera), on: Settings.camera))
         let bgMenu = NSMenu()
         for bg in CameraBackground.allCases {
@@ -290,6 +300,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleClicked() { toggle() }
     @objc func discardClicked() { stop(discard: true) }
     @objc func pauseClicked() { togglePause() }
+    @objc func dictateClicked() { dictation.toggle() }
+    @objc func copyLastDictation() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(dictation.model.last, forType: .string)
+    }
     @objc func restartClicked() { restart() }
     @objc func showLauncherClicked() { showLauncher() }
     @objc func recordScreen() { source = .screenUnderMouse; start() }

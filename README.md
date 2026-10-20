@@ -1,10 +1,22 @@
 # Bubble
 
-A free, open-source screen recorder for macOS, in the spirit of Loom. Record a tab, a window, an area or your whole screen with your camera in a floating bubble and your voice, straight to an MP4 on your Mac.
+A free, open-source screen recorder and voice-typing app for macOS, in the spirit of Loom and Wispr Flow. Record a tab, a window, an area or your whole screen with your camera in a floating bubble. Or double-tap Option and talk: Bubble types a tidy version of what you said wherever your cursor is.
 
 No account, no uploads, no subscription.
 
 ## Features
+
+Bubble has two modes, switched at the top of its window: **Record** and **Dictate**. Colour theme and sound effects are shared.
+
+### Dictate
+
+- **Double-tap ⌥ Option anywhere** to start talking, double-tap again to finish (Esc cancels). A small pill shows your words live.
+- **Typed where your cursor is.** If no text box is focused, the text goes to *Last dictation* in Bubble's window and onto your clipboard.
+- **Tidied automatically:** filler words (um, uh), stutters, self-corrections ("at 5, no wait, 6" → "at 6", "scratch that"), punctuation, capitals, and "new line" / "new paragraph".
+- **Snippets:** say a phrase ("email 2") and Bubble types the saved text. "Two" and "2" both work.
+- **Optional AI polish** with your own Anthropic API key for smarter rewrites of very messy speech (off by default).
+
+### Record
 
 - **Hover to pick what to record.** Start, hover a window, a Chrome tab or the desktop, and click *Record this*. Chrome tabs record just the page, without the tab bar or address bar. Drag to record a custom area instead.
 - **Camera bubble.** Round and draggable, three sizes. Backgrounds: none, blur, dark grey, or cut-out (just you, no circle). Person segmentation runs on your Mac with Apple's Vision framework.
@@ -17,7 +29,7 @@ No account, no uploads, no subscription.
 
 ## Privacy
 
-Bubble has no network code. It doesn't upload, sync, phone home or collect analytics. Speech recognition for naming runs on-device only (if your Mac can't do it on-device, that step is skipped). Recordings, settings and the log file (`~/Library/Logs/Bubble.log`) stay on your Mac.
+Bubble doesn't upload, sync, phone home or collect analytics. Speech is recognised on your Mac (`requiresOnDeviceRecognition`), so audio never leaves it. The only network request Bubble can make is the optional AI polish: when you turn it on and add your own API key (kept in your macOS Keychain), the dictated *text* is sent to Anthropic's API to be tidied. Audio and snippet values are never sent. Snippets live in `~/Library/Application Support/Bubble/snippets.json`, readable only by your user account. Speech recognition for naming runs on-device only (if your Mac can't do it on-device, that step is skipped). Recordings, settings and the log file (`~/Library/Logs/Bubble.log`) stay on your Mac.
 
 ## Requirements
 
@@ -33,7 +45,7 @@ cd bubble
 ./build.sh                     # builds and installs ~/Applications/Bubble.app
 ```
 
-Open Bubble from `~/Applications`. The first time, macOS asks for Screen Recording, camera and microphone access. After allowing Screen Recording, quit and reopen Bubble.
+Open Bubble from `~/Applications`. The first time, macOS asks for Screen Recording, camera and microphone access. After allowing Screen Recording, quit and reopen Bubble. For dictation, allow **Speech Recognition** and **Accessibility** (Accessibility lets Bubble notice the ⌥⌥ double-tap in other apps and type into them). If macOS says on-device dictation isn't available, turn on Dictation once in System Settings → Keyboard so it downloads the speech model.
 
 **Why the certificate?** macOS ties privacy permissions to an app's signature. Without a stable signature every rebuild looks like a new app and you'd have to allow Screen Recording again. `make-signing-cert.sh` creates a self-signed certificate in your login keychain, used only for signing your own build. If you skip it, `build.sh` still works but signs ad hoc.
 
@@ -43,6 +55,7 @@ Open Bubble from `~/Applications`. The first time, macOS asks for Screen Recordi
 | --- | --- |
 | Option-Shift-R (changeable) | Open the picker, or finish while recording |
 | Option-Shift-A | Draw an area, then record it |
+| Double-tap ⌥ Option | Start / finish dictation (Esc cancels) |
 
 If the menu bar icon is hidden behind the notch, hold Command and drag it towards the clock.
 
@@ -54,6 +67,8 @@ If the menu bar icon is hidden behind the notch, hold Command and drag it toward
 | `Sources/Picker.swift` | The hover-to-pick overlay |
 | `Sources/Camera.swift` | Camera bubble and background effects (Vision + Core Image) |
 | `Sources/Mic.swift`, `Sources/Denoiser.swift` | Microphone capture and the spectral noise reducer |
+| `Sources/Dictation.swift` | ⌥⌥ detection, live on-device speech, typing into the focused app, the dictation pill |
+| `Sources/Cleaner.swift`, `Sources/Snippets.swift` | Transcript clean-up rules, optional AI polish, snippet library |
 | `Sources/Namer.swift` | Automatic titles from the page/window and on-device speech recognition |
 | `Sources/UI.swift`, `Sources/Overlays.swift` | SwiftUI window, recording pill, countdown, toast |
 
@@ -61,7 +76,7 @@ For testing: `Bubble --selftest 6 [screen|area|window|chrome] [pause|restart]` r
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep Bubble local-first: no network calls, accounts or analytics.
+Issues and pull requests are welcome. Please keep Bubble local-first: no accounts or analytics, and nothing leaves the Mac unless the user turns it on.
 
 ## Licence
 

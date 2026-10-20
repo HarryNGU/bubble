@@ -44,6 +44,8 @@ final class UIModel: ObservableObject {
     var onDone: (() -> Void)?
     var onDragPill: ((Bool) -> Void)?  // true = drag ended
     var onCaptureShortcut: (() -> Void)?
+    var onDictate: (() -> Void)?
+    var onAllowAccessibility: (() -> Void)?
 
     var elapsedText: String {
         let s = Int(elapsed)
@@ -160,7 +162,10 @@ final class FirstClickHostingView<V: View>: NSHostingView<V> {
 
 struct HomeView: View {
     @ObservedObject var model: UIModel
+    @ObservedObject var dictation: DictationModel
     @ObservedObject private var themes = ThemeStore.shared
+    @AppStorage("homeTab") private var tab = "record"
+    @State private var showGeneral = false
 
     var body: some View {
         ZStack {
@@ -168,12 +173,17 @@ struct HomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     header
-                    if !model.screenAllowed { permissionBanner }
-                    RecordButton(shortcut: model.shortcutLabel) { model.onStart?() }
-                    cameraCard
-                    soundCard
-                    styleCard
-                    recentsSection
+                    ModeSwitcher(tab: $tab)
+                    if tab == "dictate" {
+                        DictateView(model: model, dictation: dictation)
+                    } else {
+                        if !model.screenAllowed { permissionBanner }
+                        RecordButton(shortcut: model.shortcutLabel) { model.onStart?() }
+                        cameraCard
+                        soundCard
+                        styleCard
+                        recentsSection
+                    }
                 }
                 .id(themes.current.id)  // repaint everything when the theme changes
                 .padding(.horizontal, 18)
@@ -193,9 +203,17 @@ struct HomeView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text("Bubble").font(.system(size: 17, weight: .bold, design: .rounded))
-                Text("Screen, camera and voice. Free.").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Record or dictate. Free.").font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer()
+            Button { showGeneral.toggle() } label: {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .medium))
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Theme.card))
+            }
+            .buttonStyle(.plain)
+            .help("Colour and sounds")
+            .popover(isPresented: $showGeneral, arrowEdge: .bottom) { generalSettings }
             Button { model.onOpenFolder?() } label: {
                 Image(systemName: "folder").font(.system(size: 13, weight: .medium))
                     .frame(width: 30, height: 30)
@@ -276,7 +294,7 @@ struct HomeView: View {
     }
 
     private var styleCard: some View {
-        Card(icon: "paintpalette.fill", title: "Shortcut & style", isOn: nil) {
+        Card(icon: "keyboard", title: "Shortcut & naming", isOn: nil) {
             VStack(spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
@@ -296,30 +314,35 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .help("Click, then press the keys you want (Esc to cancel)")
                 }
-                HStack {
-                    Text("Colour").font(.system(size: 12.5))
-                    Spacer()
-                    HStack(spacing: 8) {
-                        ForEach(BubbleTheme.all) { t in
-                            Button { withAnimation(.easeOut(duration: 0.2)) { themes.current = t } } label: {
-                                Circle()
-                                    .fill(LinearGradient(colors: [Color(nsColor: t.start), Color(nsColor: t.end)],
-                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 20, height: 20)
-                                    .overlay(Circle().stroke(Color.primary.opacity(themes.current == t ? 0.85 : 0), lineWidth: 2).padding(-3))
-                            }
-                            .buttonStyle(.plain)
-                            .help(t.name)
-                        }
-                    }
-                }
-                ToggleRow(title: "Sound effects", subtitle: "A soft pop when recording starts and ends", isOn: $model.sounds)
-                Divider().opacity(0.5)
                 ToggleRow(title: "Name videos automatically", subtitle: "From the page or window you recorded", isOn: $model.autoName)
                 ToggleRow(title: "Use what you said", subtitle: "Adds the topics you talked about. Runs on your Mac.", isOn: $model.nameFromSpeech)
                     .disabled(!model.autoName).opacity(model.autoName ? 1 : 0.45)
             }
         }
+    }
+
+    /// Shared by both modes: colour theme and sound effects.
+    private var generalSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Colour").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(BubbleTheme.all) { t in
+                    Button { withAnimation(.easeOut(duration: 0.2)) { themes.current = t } } label: {
+                        Circle()
+                            .fill(LinearGradient(colors: [Color(nsColor: t.start), Color(nsColor: t.end)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 22, height: 22)
+                            .overlay(Circle().stroke(Color.primary.opacity(themes.current == t ? 0.85 : 0), lineWidth: 2).padding(-3))
+                    }
+                    .buttonStyle(.plain)
+                    .help(t.name)
+                }
+            }
+            Divider()
+            ToggleRow(title: "Sound effects", subtitle: "Soft pops for recording and dictation", isOn: $model.sounds)
+        }
+        .padding(16)
+        .frame(width: 280)
     }
 
     @ViewBuilder private var recentsSection: some View {
