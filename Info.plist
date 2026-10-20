@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Bubble</string>
+    <key>CFBundleDisplayName</key>
+    <string>Bubble</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.bubble-recorder</string>
+    <key>CFBundleExecutable</key>
+    <string>Bubble</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>Bubble shows your camera in a round bubble on top of your screen recording.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Bubble lists your Chrome tabs and switches to the one you want to record.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Bubble records your voice with your screen recording.</string>
+</dict>
+</plist>
