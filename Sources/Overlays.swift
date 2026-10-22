@@ -27,13 +27,50 @@ final class ControlBar {
         model.onDragPill = { [weak self] ended in self?.drag(ended: ended) }
     }
 
-    func show(on screen: NSScreen) {
+    private var follow: Timer?
+
+    /// `follow`: recording the whole screen, so the pill goes wherever you go (other desktops,
+    /// full-screen apps, other displays). Otherwise it stays with the tab, window or area.
+    func show(on screen: NSScreen, follow following: Bool) {
         let f = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 14))
+        follow?.invalidate()
+        follow = nil
+        if following {
+            // macOS only shows a regular (Dock) app's windows on its own desktops. As a menu-bar-only
+            // app, Bubble's pill can follow you onto other desktops and other apps' full-screen spaces.
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            AppPresence.need("pill", true)
+            follow = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in self?.followMouse() }
+        } else {
+            // Stays on the desktop (or full-screen space) where the recording is.
+            panel.collectionBehavior = [.fullScreenAuxiliary, .stationary]
+        }
         panel.orderFrontRegardless()
     }
 
-    func hide() { panel.orderOut(nil) }
+    func hide() {
+        follow?.invalidate()
+        follow = nil
+        panel.orderOut(nil)
+        AppPresence.need("pill", false)
+    }
+
+    /// Moves the pill to the display the mouse is on, at the same spot it had on the old one.
+    private func followMouse() {
+        guard dragOffset == nil else { return }
+        let target = NSScreen.underMouse
+        let mid = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        guard !target.frame.contains(mid) else { panel.orderFrontRegardless(); return }
+        let old = NSScreen.screens.first { $0.frame.contains(mid) } ?? target
+        let o = old.visibleFrame, n = target.visibleFrame
+        let fx = (panel.frame.minX - o.minX) / max(1, o.width - panel.frame.width)
+        let fromTop = o.maxY - panel.frame.maxY
+        let x = n.minX + min(1, max(0, fx)) * (n.width - panel.frame.width)
+        let y = min(n.maxY - panel.frame.height, max(n.minY, n.maxY - fromTop - panel.frame.height))
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        panel.orderFrontRegardless()
+    }
 
     private func drag(ended: Bool) {
         let mouse = NSEvent.mouseLocation
@@ -50,7 +87,9 @@ final class ControlBar {
 // its glow swells and settles; on "go" the bubble pops and the tint clears.
 
 /// `region` is what will be recorded, in AppKit global coordinates (nil = the whole screen).
-func runCountdown(on screen: NSScreen, region: NSRect? = nil, then done: @escaping () -> Void) {
+/// Returns a function that cancels the countdown (recording then doesn't start).
+@discardableResult
+func runCountdown(on screen: NSScreen, region: NSRect? = nil, then done: @escaping () -> Void) -> () -> Void {
     let panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
     panel.isOpaque = false
@@ -91,6 +130,11 @@ func runCountdown(on screen: NSScreen, region: NSRect? = nil, then done: @escapi
         }
     }
     RunLoop.main.add(t, forMode: .common)
+    return {
+        t.invalidate()
+        withAnimation(.easeIn(duration: 0.15)) { model.visible = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.17) { panel.orderOut(nil) }
+    }
 }
 
 final class CountdownModel: ObservableObject {
@@ -253,6 +297,9 @@ final class AreaSelector: NSWindow {
         w.makeFirstResponder(view)
         NSCursor.crosshair.push()
     }
+
+    /// Closes the area selector if it's open (Esc pressed while another app has focus).
+    static func cancelActive() { current?.finish(nil) }
 
     private func finish(_ rect: CGRect?) {
         NSCursor.pop()

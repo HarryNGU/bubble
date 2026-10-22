@@ -38,18 +38,17 @@ func listWindows() -> [WindowChoice] {
     return all.filter { $0.1 || !appsWithTitles.contains($0.0.pid) }.map { $0.0 }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let bubble = CameraBubble()
     private let recorder = Recorder()
     private let dictation = DictationController()
+    private lazy var assistant = AssistantController()
     private var controls: ControlBar!
     private var recording = false
     private var busy = false
     private var titleTimer: Timer?
-    private var mainHotKey: EventHotKeyRef?
-    private var areaHotKey: EventHotKeyRef?
-    private var shortcutMonitor: Any?
     private var lastHeard = Date()
     private var themeWatch: Any?
 
@@ -59,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var activeSince: Date?          // nil while paused
     private var accumulated: TimeInterval = 0
     private var restarting = false
+    private var quitting = false
     private var recordingContext: (title: String?, app: String?) = (nil, nil)  // captured at start, for naming
     private var recordingStartedAt = Date()
     private var selftestSeconds: Double?
@@ -89,7 +89,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         buildMainMenu()
         buildLauncher()
-        registerHotKeys()
+        let keys = ShortcutCenter.shared
+        keys.onTrigger = { [weak self] a in
+            guard let self else { return }
+            switch a {
+            case .record: self.toggle()
+            case .area: self.pickAreaAndRecord()
+            case .dictate: self.dictation.toggle()
+            case .assist: self.assistant.toggle()
+            case .assistAsk: break  // handled by the panel while it is open
+            case .assistVoice:
+                if !self.assistant.isShown { self.assistant.show() }
+                self.assistant.model.toggleTalk()
+            }
+        }
+        keys.onChange = { [weak self] in self?.dictation.applyShortcut(); self?.assistant.refreshKeys() }
+        keys.install()
+        BubbleToolServer.shared.start()
+        dictation.ownTextTarget = { [weak self] text in self?.assistant.takeDictation(text) ?? false }
         dictation.start()
         log("launched; screen access = \(CGPreflightScreenCaptureAccess())")
         if !CGPreflightScreenCaptureAccess() {
@@ -126,6 +143,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.start() }
         } else {
             showLauncher()
+            // Testing: `--dicttest` dictates for 8 seconds (say something), then delivers.
+            if args.contains("--dicttest") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.dictation.toggle() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 11) { self.dictation.toggle() }
+            }
+            // Testing: `--assisttest` opens the assistant and starts listening.
+            if args.contains("--assisttest") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.assistant.show() }
+                if let i = args.firstIndex(of: "--assisttest"), i + 1 < args.count {
+                    let q = args[i + 1]
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.assistant.model.seeScreen = false; self.assistant.model.ask(q) }
+                }
+            }
+            // Testing: `--edit <file name>` opens that recording in the reel editor.
+            if let i = args.firstIndex(of: "--edit"), i + 1 < args.count {
+                model.editing = Settings.folder.appendingPathComponent(args[i + 1])
+            }
         }
     }
 
@@ -142,12 +176,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         main.addItem(appItem)
         let appMenu = NSMenu()
         appMenu.addItem(item("Start / Finish Recording…", #selector(toggleClicked)))
-        appMenu.addItem(item("Record Custom Area…", #selector(pickAreaAndRecord), key: "a", mods: [.option, .shift]))
+        appMenu.addItem(item("Record Custom Area…", #selector(pickAreaAndRecord)))
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(title: "Hide Bubble", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
         appMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         appMenu.addItem(item("Quit Bubble", #selector(quit), key: "q"))
         appItem.submenu = appMenu
+        // ⌘C / ⌘V / ⌘A in text fields come from the Edit menu, so it has to exist.
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(redo)
+        edit.addItem(.separator())
+        edit.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        edit.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        edit.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        edit.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editItem.submenu = edit
         NSApp.mainMenu = main
     }
 
@@ -165,8 +213,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onRestart = { [weak self] in self?.restart() }
         model.onDiscard = { [weak self] in self?.stop(discard: true) }
         model.onDone = { [weak self] in self?.stop(discard: false) }
-        model.onCaptureShortcut = { [weak self] in self?.captureShortcut() }
         model.onDictate = { [weak self] in self?.dictation.toggle() }
+        model.onAssist = { [weak self] in self?.assistant.show() }
+        model.onAssistKeysChanged = { [weak self] in self?.assistant.refreshKeys() }
         model.onAllowAccessibility = {
             Inserter.requestTrust()
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
@@ -174,17 +223,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func buildLauncher() {
-        let host = NSHostingView(rootView: HomeView(model: model, dictation: dictation.model))
-        launcher = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 800),
-                            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+        let host = NSHostingView(rootView: MainView(model: model, dictation: dictation.model))
+        launcher = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 740),
+                            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                             backing: .buffered, defer: false)
         launcher.titlebarAppearsTransparent = true
         launcher.titleVisibility = .hidden
-        launcher.isMovableByWindowBackground = true
+        launcher.title = "Bubble"
         launcher.isReleasedWhenClosed = false
+        launcher.collectionBehavior = [.fullScreenPrimary]
+        launcher.minSize = NSSize(width: 860, height: 560)
         launcher.contentView = host
-        launcher.setContentSize(NSSize(width: 380, height: 800))
-        launcher.center()
+        launcher.setFrameAutosaveName("BubbleMainWindow")
+        if !launcher.setFrameUsingName("BubbleMainWindow") { launcher.center() }
     }
 
     private func showLauncher() {
@@ -198,8 +249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func pickArea(then done: @escaping (Bool) -> Void) {
         launcher.orderOut(nil)
         let screen = NSScreen.underMouse
+        ShortcutCenter.shared.escapeCancels { AreaSelector.cancelActive() }
         AreaSelector.pick(on: screen) { [weak self] rect in
             guard let self else { return }
+            ShortcutCenter.shared.escapeCancels(nil)
             if let rect {
                 self.source = .area(screen.displayID, rect)
                 log("source: \(self.source.label)")
@@ -213,15 +266,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         if recording {
-            menu.addItem(item("Done  (\(model.elapsedText))   \(model.shortcutLabel)", #selector(toggleClicked)))
+            menu.addItem(item("Done  (\(model.elapsedText))   \(ShortcutCenter.shared.label(.record))", #selector(toggleClicked)))
             menu.addItem(item(model.paused ? "Resume" : "Pause", #selector(pauseClicked)))
             menu.addItem(item("Restart", #selector(restartClicked)))
             menu.addItem(item("Discard Recording", #selector(discardClicked)))
         } else {
-            menu.addItem(item("Start Recording…   \(model.shortcutLabel)", #selector(toggleClicked)))
+            menu.addItem(item("Start Recording…   \(ShortcutCenter.shared.label(.record))", #selector(toggleClicked)))
             menu.addItem(.separator())
             menu.addItem(item("Record Entire Screen", #selector(recordScreen)))
-            menu.addItem(item("Record Custom Area…", #selector(pickAreaAndRecord), key: "a", mods: [.option, .shift]))
+            menu.addItem(item("Record Custom Area…   \(ShortcutCenter.shared.label(.area))", #selector(pickAreaAndRecord)))
             let winMenu = NSMenu(), appMenu = NSMenu()
             var seen = Set<pid_t>()
             for w in listWindows().prefix(40) {
@@ -243,8 +296,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(ai)
         }
         menu.addItem(.separator())
-        menu.addItem(item(dictation.model.phase == .listening ? "Finish Dictation   ⌥⌥" : "Dictate   ⌥⌥", #selector(dictateClicked)))
+        let dk = ShortcutCenter.shared.label(.dictate)
+        menu.addItem(item(dictation.model.phase == .listening ? "Finish Dictation   \(dk)" : "Dictate   \(dk)", #selector(dictateClicked)))
         menu.addItem(item("Copy Last Dictation", #selector(copyLastDictation), enabled: !dictation.model.last.isEmpty))
+        menu.addItem(.separator())
+        menu.addItem(item("Ask Bubble   \(ShortcutCenter.shared.label(.assist))", #selector(assistClicked)))
+        if assistant.model.listening { menu.addItem(item("Stop Listening", #selector(stopListeningClicked))) }
         menu.addItem(.separator())
         menu.addItem(item("Camera Bubble", #selector(toggleCamera), on: Settings.camera))
         let bgMenu = NSMenu()
@@ -301,6 +358,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func discardClicked() { stop(discard: true) }
     @objc func pauseClicked() { togglePause() }
     @objc func dictateClicked() { dictation.toggle() }
+    @objc func assistClicked() { assistant.show() }
+    @objc func stopListeningClicked() { if assistant.model.listening { assistant.model.toggleListening() } }
     @objc func copyLastDictation() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(dictation.model.last, forType: .string)
@@ -324,8 +383,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func startPicker() {
         guard !recording, !busy else { return }
         launcher.orderOut(nil)
+        ShortcutCenter.shared.escapeCancels { Picker.cancelActive() }
         Picker.run { [weak self] picked in
             guard let self else { return }
+            ShortcutCenter.shared.escapeCancels(nil)
             guard let picked else { self.showLauncher(); return }
             self.source = picked
             self.start()
@@ -345,7 +406,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Settings.camera { bubble.moveOnto(screen) }
         let go = { (target: CaptureSource) in
             if Settings.countdown && !CommandLine.arguments.contains("--selftest") {
-                runCountdown(on: screen, region: Self.region(of: target, screen: screen)) { self.beginCapture(on: screen, target: target) }
+                // Esc during the 3-2-1 cancels before anything is recorded.
+                let cancel = runCountdown(on: screen, region: Self.region(of: target, screen: screen)) {
+                    ShortcutCenter.shared.escapeCancels(nil)
+                    self.beginCapture(on: screen, target: target)
+                }
+                ShortcutCenter.shared.escapeCancels { [weak self] in
+                    cancel()
+                    self?.busy = false
+                    log("countdown cancelled")
+                }
             } else {
                 self.beginCapture(on: screen, target: target)
             }
@@ -389,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.micSilent = false
         model.micLevel = 0
         // The control bar must be on screen before ScreenCaptureKit is asked to exclude it.
-        controls.show(on: screen)
+        controls.show(on: screen, follow: target.isWholeScreen)
         let exclude = [controls.panel.windowNumber]
         let bubbleWindows = Settings.camera ? [bubble.panel.windowNumber] : []
         Task { @MainActor in
@@ -405,7 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 model.elapsed = 0
                 model.paused = false
                 model.saving = false
-                controls.show(on: screen)
+                controls.show(on: screen, follow: target.isWholeScreen)
                 setIcon()
                 titleTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
                 if CommandLine.arguments.contains("restart"), selftestSeconds != nil, !selftestRestarted {  // restart once, 2s in
@@ -468,6 +538,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func finished(_ url: URL?) {
         log("finished: \(url?.path ?? "discarded")")
+        if quitting {
+            quitting = false
+            NSApp.reply(toApplicationShouldTerminate: true)
+            return
+        }
         model.refreshRecents()
         if restarting {
             restarting = false
@@ -487,6 +562,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             copyToClipboard(url)
             showSavedToast(on: NSScreen.underMouse, url: url)
             revealInFinder(url)
+        } else {
+            // A test run records once and quits, so it can't be left running in test mode
+            // (no countdown, recordings that stop by themselves).
+            log("selftest finished; quitting")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { NSApp.terminate(nil) }
+            return
         }
         model.refreshRecents()
 
@@ -552,104 +633,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleMic() { model.mic.toggle() }
     @objc func toggleNoise() { model.noise.toggle() }
     @objc func openFolder() { NSWorkspace.shared.open(Settings.folder) }
-    @objc func quit() {
-        if recording {
-            stop(discard: false)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { NSApp.terminate(nil) }
-        } else {
-            NSApp.terminate(nil)
+    @objc func quit() { NSApp.terminate(nil) }
+
+    /// Background helpers (Whisper's voice server, Claude Code) stop with Bubble.
+    func applicationWillTerminate(_ n: Notification) {
+        WhisperServer.shared.stop()
+        assistant.model.session.shutdown()
+    }
+
+    /// However Bubble is asked to quit (menu, ⌘Q, logging out, another app), a recording in
+    /// progress is finished and saved first; Bubble quits once the file is complete.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard recording else { return .terminateNow }
+        log("quit requested while recording: saving first")
+        quitting = true
+        stop(discard: false)
+        // Never hang the logout: give up after 30 seconds.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard self?.quitting == true else { return }
+            NSApp.reply(toApplicationShouldTerminate: true)
         }
-    }
-
-    // MARK: Global shortcuts (Carbon hot keys need no extra permission)
-    //   main (default Option-Shift-R): picker / finish     Option-Shift-A: draw an area, then record
-
-    private func registerHotKeys() {
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
-            var hk = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
-            log("hotkey \(hk.id) pressed")
-            let id = hk.id
-            DispatchQueue.main.async {
-                guard let d = NSApp.delegate as? AppDelegate else { return }
-                if id == 1 { d.toggle() } else { d.pickAreaAndRecord() }
-            }
-            return noErr
-        }, 1, &spec, nil, nil)
-        _ = registerMainHotKey()
-        let status = RegisterEventHotKey(UInt32(kVK_ANSI_A), UInt32(optionKey | shiftKey),
-                                         EventHotKeyID(signature: OSType(0x4255_424C), id: 2),
-                                         GetApplicationEventTarget(), 0, &areaHotKey)
-        log("hotkey 2 registered = \(status == noErr)")
-    }
-
-    private func registerMainHotKey() -> Bool {
-        if let mainHotKey { UnregisterEventHotKey(mainHotKey) }
-        mainHotKey = nil
-        let status = RegisterEventHotKey(Settings.hotKeyCode, Settings.hotKeyMods,
-                                         EventHotKeyID(signature: OSType(0x4255_424C), id: 1),
-                                         GetApplicationEventTarget(), 0, &mainHotKey)
-        log("hotkey 1 (\(Settings.hotKeyLabel)) registered = \(status == noErr)")
-        return status == noErr
-    }
-
-    /// Click the shortcut in settings, then press a new combination (Esc cancels).
-    private func captureShortcut() {
-        guard shortcutMonitor == nil else { return }
-        model.capturingShortcut = true
-        if let mainHotKey { UnregisterEventHotKey(mainHotKey); self.mainHotKey = nil }
-        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
-            guard let self else { return e }
-            if e.keyCode == 53 { self.endShortcutCapture(); return nil }  // Esc
-            let flags = e.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard !flags.subtracting(.shift).isEmpty else { NSSound.beep(); return nil }  // needs ⌘, ⌥ or ⌃
-            let old = (Settings.hotKeyCode, Settings.hotKeyMods, Settings.hotKeyLabel)
-            var carbon: UInt32 = 0
-            if flags.contains(.command) { carbon |= UInt32(cmdKey) }
-            if flags.contains(.option) { carbon |= UInt32(optionKey) }
-            if flags.contains(.control) { carbon |= UInt32(controlKey) }
-            if flags.contains(.shift) { carbon |= UInt32(shiftKey) }
-            Settings.hotKeyCode = UInt32(e.keyCode)
-            Settings.hotKeyMods = carbon
-            Settings.hotKeyLabel = Self.label(flags: flags, event: e)
-            if !self.registerMainHotKey() {
-                (Settings.hotKeyCode, Settings.hotKeyMods, Settings.hotKeyLabel) = old
-                NSSound.beep()
-                log("shortcut taken by another app; kept \(old.2)")
-            }
-            self.model.shortcutLabel = Settings.hotKeyLabel
-            self.endShortcutCapture()
-            return nil
-        }
-    }
-
-    private func endShortcutCapture() {
-        if let m = shortcutMonitor { NSEvent.removeMonitor(m) }
-        shortcutMonitor = nil
-        model.capturingShortcut = false
-        if mainHotKey == nil { _ = registerMainHotKey() }
-    }
-
-    private static func label(flags: NSEvent.ModifierFlags, event e: NSEvent) -> String {
-        var s = ""
-        if flags.contains(.control) { s += "⌃" }
-        if flags.contains(.option) { s += "⌥" }
-        if flags.contains(.shift) { s += "⇧" }
-        if flags.contains(.command) { s += "⌘" }
-        let special: [UInt16: String] = [49: "Space", 36: "↩", 48: "⇥", 51: "⌫", 117: "⌦", 123: "←", 124: "→", 125: "↓", 126: "↑",
-                                         122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8",
-                                         101: "F9", 109: "F10", 103: "F11", 111: "F12"]
-        if let name = special[e.keyCode] { return s + name }
-        // Use the unshifted key so ⌥ symbols (like ® for ⌥R) show as the plain letter.
-        let key = e.charactersIgnoringModifiers?.uppercased() ?? "?"
-        return s + key
+        return .terminateLater
     }
 }
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.regular)
-app.run()
+// Top-level code runs on the main thread.
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.regular)
+    app.run()
+}

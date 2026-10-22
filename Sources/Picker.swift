@@ -71,6 +71,9 @@ final class Picker {
 
     fileprivate func cancel() { finish(nil) }
 
+    /// Closes the picker if it's open (Esc pressed while another app has focus).
+    static func cancelActive() { active?.cancel() }
+
     // MARK: Hover
 
     private func refreshWindows() {

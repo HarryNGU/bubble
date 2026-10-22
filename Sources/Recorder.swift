@@ -13,6 +13,14 @@ enum CaptureSource {
     case area(CGDirectDisplayID, CGRect)
     case croppedWindow(CGWindowID, CGFloat, String)  // window minus a top inset (Chrome's toolbar)
 
+    /// A whole display, where you move between apps and desktops while recording.
+    var isWholeScreen: Bool {
+        switch self {
+        case .screenUnderMouse, .display: return true
+        default: return false
+        }
+    }
+
     var label: String {
         switch self {
         case .screenUnderMouse: return "Entire screen"

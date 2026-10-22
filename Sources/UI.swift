@@ -20,13 +20,13 @@ final class UIModel: ObservableObject {
     @Published var sounds = Settings.sounds { didSet { Settings.sounds = sounds } }
     @Published var autoName = Settings.autoName { didSet { Settings.autoName = autoName } }
     @Published var nameFromSpeech = Settings.nameFromSpeech { didSet { Settings.nameFromSpeech = nameFromSpeech } }
-    @Published var shortcutLabel = Settings.hotKeyLabel
-    @Published var capturingShortcut = false
     @Published var micLevel: Float = 0      // 0...1 while recording
     @Published var micSilent = false        // nothing heard for a few seconds
 
     @Published var screenAllowed = CGPreflightScreenCaptureAccess()
     @Published var recents: [RecentRecording] = []
+    /// The recording open in the reel editor, if any.
+    @Published var editing: URL?
 
     // Recording pill
     @Published var paused = false
@@ -43,8 +43,9 @@ final class UIModel: ObservableObject {
     var onDiscard: (() -> Void)?
     var onDone: (() -> Void)?
     var onDragPill: ((Bool) -> Void)?  // true = drag ended
-    var onCaptureShortcut: (() -> Void)?
     var onDictate: (() -> Void)?
+    var onAssist: (() -> Void)?
+    var onAssistKeysChanged: (() -> Void)?
     var onAllowAccessibility: (() -> Void)?
 
     var elapsedText: String {
@@ -54,10 +55,13 @@ final class UIModel: ObservableObject {
 
     func refreshRecents() {
         let fm = FileManager.default
-        let files = (try? fm.contentsOfDirectory(at: Settings.folder, includingPropertiesForKeys: [.creationDateKey]))?
-            .filter { $0.pathExtension == "mp4" && !$0.lastPathComponent.hasPrefix(".") } ?? []
+        func videos(in dir: URL) -> [URL] {
+            ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey])) ?? [])
+                .filter { $0.pathExtension == "mp4" && !$0.lastPathComponent.hasPrefix(".") }
+        }
+        let files = videos(in: Settings.folder) + videos(in: Settings.reelsFolder)
         let dated = files.map { ($0, (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) }
-            .sorted { $0.1 > $1.1 }.prefix(4)
+            .sorted { $0.1 > $1.1 }
         recents = dated.map { RecentRecording(url: $0.0, date: $0.1) }
         for item in recents { item.load() }
     }
@@ -71,6 +75,9 @@ final class RecentRecording: ObservableObject, Identifiable {
     var id: URL { url }
 
     init(url: URL, date: Date) { self.url = url; self.date = date }
+
+    /// Made by the reel editor (saved in Bubble Recordings/Reels).
+    var isReel: Bool { url.deletingLastPathComponent().standardizedFileURL == Settings.reelsFolder.standardizedFileURL }
 
     func load() {
         Task {
@@ -158,287 +165,6 @@ final class FirstClickHostingView<V: View>: NSHostingView<V> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-// MARK: - Home window
-
-struct HomeView: View {
-    @ObservedObject var model: UIModel
-    @ObservedObject var dictation: DictationModel
-    @ObservedObject private var themes = ThemeStore.shared
-    @AppStorage("homeTab") private var tab = "record"
-    @State private var showGeneral = false
-
-    var body: some View {
-        ZStack {
-            VisualEffect(material: .sidebar).ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    header
-                    ModeSwitcher(tab: $tab)
-                    if tab == "dictate" {
-                        DictateView(model: model, dictation: dictation)
-                    } else {
-                        if !model.screenAllowed { permissionBanner }
-                        RecordButton(shortcut: model.shortcutLabel) { model.onStart?() }
-                        cameraCard
-                        soundCard
-                        styleCard
-                        recentsSection
-                    }
-                }
-                .id(themes.current.id)  // repaint everything when the theme changes
-                .padding(.horizontal, 18)
-                .padding(.top, 34)
-                .padding(.bottom, 18)
-            }
-        }
-        .frame(width: 380)
-        .frame(minHeight: 640)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle().fill(Theme.brand).frame(width: 30, height: 30)
-                Circle().fill(.white).frame(width: 11, height: 11)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Bubble").font(.system(size: 17, weight: .bold, design: .rounded))
-                Text("Record or dictate. Free.").font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button { showGeneral.toggle() } label: {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .medium))
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(Theme.card))
-            }
-            .buttonStyle(.plain)
-            .help("Colour and sounds")
-            .popover(isPresented: $showGeneral, arrowEdge: .bottom) { generalSettings }
-            Button { model.onOpenFolder?() } label: {
-                Image(systemName: "folder").font(.system(size: 13, weight: .medium))
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(Theme.card))
-            }
-            .buttonStyle(.plain)
-            .help("Open Bubble Recordings on your Desktop")
-        }
-    }
-
-    private var permissionBanner: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Screen Recording is off").font(.system(size: 12.5, weight: .semibold))
-                Text("Turn Bubble on in System Settings, then quit and reopen Bubble.")
-                    .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Button("Open Settings") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                }
-                .controlSize(.small)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.12)))
-    }
-
-    private var cameraCard: some View {
-        Card(icon: "video.fill", title: "Camera", isOn: $model.camera) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Background").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    ForEach(CameraBackground.allCases, id: \.self) { bg in
-                        BackgroundTile(kind: bg, selected: model.background == bg) { model.background = bg }
-                    }
-                }
-                HStack {
-                    Text("Bubble size").font(.system(size: 12.5))
-                    Spacer()
-                    SwiftUI.Picker("", selection: $model.bubbleSize) {
-                        Text("S").tag(CGFloat(140))
-                        Text("M").tag(CGFloat(200))
-                        Text("L").tag(CGFloat(280))
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 120)
-                }
-            }
-            .disabled(!model.camera)
-            .opacity(model.camera ? 1 : 0.45)
-        }
-    }
-
-    private var soundCard: some View {
-        Card(icon: "waveform", title: "Sound", isOn: nil) {
-            VStack(spacing: 10) {
-                ToggleRow(title: "Microphone", subtitle: nil, isOn: $model.mic)
-                HStack {
-                    Text("Mic").font(.system(size: 12.5)).foregroundStyle(.secondary)
-                    Spacer()
-                    SwiftUI.Picker("", selection: $model.micDevice) {
-                        Text("Mac default").tag("")
-                        ForEach(model.micDevices, id: \.0) { Text($0.1).tag($0.0) }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 210)
-                }
-                .disabled(!model.mic).opacity(model.mic ? 1 : 0.45)
-                ToggleRow(title: "Noise suppression", subtitle: "Keeps voices, removes background noise", isOn: $model.noise)
-                    .disabled(!model.mic).opacity(model.mic ? 1 : 0.45)
-                ToggleRow(title: "Mac audio", subtitle: "Include sound playing on your Mac", isOn: $model.systemAudio)
-                Divider().opacity(0.5)
-                ToggleRow(title: "3-2-1 countdown", subtitle: nil, isOn: $model.countdown)
-            }
-        }
-    }
-
-    private var styleCard: some View {
-        Card(icon: "keyboard", title: "Shortcut & naming", isOn: nil) {
-            VStack(spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Start / finish shortcut").font(.system(size: 12.5))
-                        Text("Works from any app").font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button { model.onCaptureShortcut?() } label: {
-                        Text(model.capturingShortcut ? "Press keys…" : model.shortcutLabel)
-                            .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(model.capturingShortcut ? Theme.accent : .primary)
-                            .frame(minWidth: 86).padding(.vertical, 6).padding(.horizontal, 10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
-                            .overlay(RoundedRectangle(cornerRadius: 8)
-                                .stroke(model.capturingShortcut ? Theme.accent : Theme.stroke, lineWidth: model.capturingShortcut ? 1.5 : 1))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Click, then press the keys you want (Esc to cancel)")
-                }
-                ToggleRow(title: "Name videos automatically", subtitle: "From the page or window you recorded", isOn: $model.autoName)
-                ToggleRow(title: "Use what you said", subtitle: "Adds the topics you talked about. Runs on your Mac.", isOn: $model.nameFromSpeech)
-                    .disabled(!model.autoName).opacity(model.autoName ? 1 : 0.45)
-            }
-        }
-    }
-
-    /// Shared by both modes: colour theme and sound effects.
-    private var generalSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Colour").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-            HStack(spacing: 10) {
-                ForEach(BubbleTheme.all) { t in
-                    Button { withAnimation(.easeOut(duration: 0.2)) { themes.current = t } } label: {
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(nsColor: t.start), Color(nsColor: t.end)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 22, height: 22)
-                            .overlay(Circle().stroke(Color.primary.opacity(themes.current == t ? 0.85 : 0), lineWidth: 2).padding(-3))
-                    }
-                    .buttonStyle(.plain)
-                    .help(t.name)
-                }
-            }
-            Divider()
-            ToggleRow(title: "Sound effects", subtitle: "Soft pops for recording and dictation", isOn: $model.sounds)
-        }
-        .padding(16)
-        .frame(width: 280)
-    }
-
-    @ViewBuilder private var recentsSection: some View {
-        if !model.recents.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Recent").font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Button("Show all") { model.onOpenFolder?() }
-                        .buttonStyle(.plain).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.accent)
-                }
-                VStack(spacing: 6) {
-                    ForEach(model.recents) { RecentRow(item: $0) }
-                }
-            }
-            .padding(.top, 4)
-        }
-    }
-}
-
-struct RecordButton: View {
-    var shortcut: String = Settings.hotKeyLabel
-    let action: () -> Void
-    @State private var hover = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(.white.opacity(0.25)).frame(width: 40, height: 40)
-                    Circle().fill(.white).frame(width: 16, height: 16)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Start recording").font(.system(size: 16, weight: .bold, design: .rounded))
-                    Text("Tab, window, area or screen").font(.system(size: 11.5)).opacity(0.85)
-                }
-                Spacer()
-                Text(shortcut)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .padding(.horizontal, 7).padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.22)))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.brand))
-            .shadow(color: Theme.accent.opacity(hover ? 0.45 : 0.25), radius: hover ? 14 : 8, y: 4)
-            .scaleEffect(hover ? 1.012 : 1)
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.defaultAction)
-        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
-    }
-}
-
-struct Card<Content: View>: View {
-    let icon: String
-    let title: String
-    let isOn: Binding<Bool>?
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.brand))
-                Text(title).font(.system(size: 13, weight: .semibold))
-                Spacer()
-                if let isOn { Toggle("", isOn: isOn).toggleStyle(.switch).controlSize(.small).labelsHidden().tint(Theme.accent) }
-            }
-            content
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.stroke))
-    }
-}
-
-struct ToggleRow: View {
-    let title: String
-    let subtitle: String?
-    @Binding var isOn: Bool
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 12.5))
-                if let subtitle { Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary) }
-            }
-            Spacer()
-            Toggle("", isOn: $isOn).toggleStyle(.switch).controlSize(.mini).labelsHidden().tint(Theme.accent)
-        }
-    }
-}
-
 struct BackgroundTile: View {
     let kind: CameraBackground
     let selected: Bool
@@ -508,37 +234,6 @@ struct Checkerboard: View {
             }
         }
         .background(Color.white.opacity(0.6))
-    }
-}
-
-struct RecentRow: View {
-    @ObservedObject var item: RecentRecording
-    @State private var hover = false
-
-    var body: some View {
-        Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]) } label: {
-            HStack(spacing: 10) {
-                Group {
-                    if let t = item.thumbnail { Image(nsImage: t).resizable().aspectRatio(contentMode: .fill) }
-                    else { Rectangle().fill(Theme.card).overlay(Image(systemName: "film").foregroundStyle(.secondary)) }
-                }
-                .frame(width: 64, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(Namer.displayTitle(of: item.url)).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Text([item.date.formatted(date: .abbreviated, time: .shortened), item.duration].filter { !$0.isEmpty }.joined(separator: "  ·  "))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "arrow.up.forward.square").foregroundStyle(.secondary).opacity(hover ? 1 : 0)
-            }
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: 10).fill(hover ? Theme.card : .clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
-        .help("Show in Finder")
     }
 }
 

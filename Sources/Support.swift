@@ -40,6 +40,13 @@ enum Settings {
         set { d.set(newValue.rawValue, forKey: "background") }
     }
 
+    /// Edited reels, inside the recordings folder so they're easy to find and upload.
+    static var reelsFolder: URL {
+        let url = folder.appendingPathComponent("Reels", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
     /// ~/Desktop/Bubble Recordings. Anything left in the old ~/Movies folder is moved over once.
     static var folder: URL {
         let fm = FileManager.default

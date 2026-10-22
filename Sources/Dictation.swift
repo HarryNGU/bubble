@@ -1,7 +1,7 @@
-// Voice typing. Double-tap Option anywhere: Bubble listens (Apple's on-device speech
-// recognition), tidies what you said, expands snippets, then types it into the text box
-// you're in. If no text box is focused, the text goes to "Last dictation" in Bubble's window
-// and onto the clipboard. Double-tap Option again to finish; Esc cancels.
+// Voice typing. Double-tap Option anywhere (or the shortcut chosen in settings): Bubble listens
+// (Apple's on-device speech recognition), tidies what you said, expands snippets, then types it
+// into the text box you're in. If no text box is focused, the text goes to the Scratchpad in
+// Bubble's window and onto the clipboard. Tap Option once to finish; Esc cancels.
 //
 // Needs Accessibility access (to notice Option taps in other apps and to type into them).
 
@@ -11,10 +11,15 @@ import AVFoundation
 import Speech
 import SwiftUI
 
-// MARK: - Double-tap Option
+// MARK: - Modifier taps
 
-final class DoubleOptionMonitor {
+/// Notices a modifier key (⌥ by default) pressed and released on its own. A double tap starts;
+/// while `endsOnSingleTap` says so, one tap finishes.
+final class ModifierTapMonitor {
+    var modifier: NSEvent.ModifierFlags? = .option  // nil = off (dictation uses a key combination)
     var onDoubleTap: (() -> Void)?
+    var onSingleTap: (() -> Void)?
+    var endsOnSingleTap: () -> Bool = { false }
     var onEscape: (() -> Void)?
     private var monitors: [Any] = []
     private var optionDownAt: Date?
@@ -43,13 +48,16 @@ final class DoubleOptionMonitor {
             lastTap = nil
         case .flagsChanged:
             let flags = e.modifierFlags.intersection([.command, .option, .control, .shift, .function])
-            if flags == .option {
+            if let m = modifier, flags == m {
                 optionDownAt = Date()
                 otherInput = false
             } else if flags.isEmpty, let down = optionDownAt {
                 optionDownAt = nil
                 guard !otherInput, Date().timeIntervalSince(down) < 0.35 else { lastTap = nil; return }
-                if let last = lastTap, Date().timeIntervalSince(last) < 0.45 {
+                if endsOnSingleTap() {
+                    lastTap = nil
+                    onSingleTap?()
+                } else if let last = lastTap, Date().timeIntervalSince(last) < 0.45 {
                     lastTap = nil
                     onDoubleTap?()
                 } else {
@@ -77,6 +85,10 @@ final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var latest = ""
     private var finished: ((String) -> Void)?
     private var lastLevel = Date.distantPast
+    /// A copy of what you said (16 kHz mono 16-bit), for Whisper to transcribe more accurately.
+    private(set) var recorded = Data()
+    private var converter: AVAudioConverter?
+    private let pcm16 = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
 
     static func checkAvailability() async -> String? {
         let status: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { c in
@@ -95,6 +107,9 @@ final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
 
     func start(hints: [String]) throws {
         guard let recognizer = Self.recognizer() else { throw RecordError(message: "Speech recognition isn't available.") }
+        WhisperServer.shared.warmUp()
+        recorded = Data()
+        converter = nil
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true  // audio never leaves the Mac
         request.shouldReportPartialResults = true
@@ -160,6 +175,7 @@ final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
         request?.appendAudioSampleBuffer(sb)
+        keep(sb)
         guard Date().timeIntervalSince(lastLevel) > 0.06, let block = CMSampleBufferGetDataBuffer(sb),
               let desc = CMSampleBufferGetFormatDescription(sb),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee else { return }
@@ -181,6 +197,45 @@ final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         let db = 10 * log10(max(sum / Float(count), 1e-12))
         let level = max(0, min(1, (db + 55) / 50))
         DispatchQueue.main.async { self.onLevel?(level) }
+    }
+}
+
+extension SpeechSession {
+    /// Converts a mic buffer to 16 kHz mono and adds it to `recorded` (capped at 3 minutes).
+    fileprivate func keep(_ sb: CMSampleBuffer) {
+        guard recorded.count < 16_000 * 2 * 180, let fd = CMSampleBufferGetFormatDescription(sb) else { return }
+        let inFormat = AVAudioFormat(cmAudioFormatDescription: fd)
+        let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sb))
+        guard frames > 0, let inBuf = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: frames) else { return }
+        inBuf.frameLength = frames
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sb, at: 0, frameCount: Int32(frames), into: inBuf.mutableAudioBufferList) == noErr else { return }
+        if converter == nil || converter?.inputFormat != inFormat { converter = AVAudioConverter(from: inFormat, to: pcm16) }
+        guard let conv = converter,
+              let out = AVAudioPCMBuffer(pcmFormat: pcm16, frameCapacity: AVAudioFrameCount(Double(frames) * 16_000 / inFormat.sampleRate) + 32) else { return }
+        var fed = false
+        var err: NSError?
+        conv.convert(to: out, error: &err) { _, status in
+            if fed { status.pointee = .noDataNow; return nil }
+            fed = true
+            status.pointee = .haveData
+            return inBuf
+        }
+        guard err == nil, let p = out.int16ChannelData?[0] else { return }
+        recorded.append(Data(bytes: p, count: Int(out.frameLength) * 2))
+    }
+
+    /// Whisper's transcript of what was said, falling back to Apple's (`apple`) if Whisper isn't
+    /// set up or doesn't answer.
+    func bestTranscript(apple: String, hints: [String]) async -> String {
+        guard WhisperServer.shared.available else { return apple }
+        let prompt = hints.prefix(30).joined(separator: ", ")
+        if let w = await WhisperServer.shared.transcribe(pcm16: recorded, prompt: prompt) {
+            if w.trimmingCharacters(in: .whitespaces).lowercased() != apple.trimmingCharacters(in: .whitespaces).lowercased() {
+                log("dictation: whisper used (\(w.split(separator: " ").count) words, apple heard \(apple.split(separator: " ").count))")
+            }
+            return w
+        }
+        return apple
     }
 }
 
@@ -270,7 +325,9 @@ final class DictationModel: ObservableObject {
 
 final class DictationController {
     let model = DictationModel()
-    private let monitor = DoubleOptionMonitor()
+    /// Returns true if one of Bubble's own text boxes took the dictated text.
+    var ownTextTarget: ((String) -> Bool)?
+    private let monitor = ModifierTapMonitor()
     private var speech: SpeechSession?
     private var hud: NSPanel?
     private var targetApp: String?
@@ -278,7 +335,10 @@ final class DictationController {
 
     func start() {
         monitor.onDoubleTap = { [weak self] in self?.toggle() }
+        monitor.onSingleTap = { [weak self] in self?.finish() }
+        monitor.endsOnSingleTap = { [weak self] in self?.model.phase == .listening }
         monitor.onEscape = { [weak self] in self?.cancel() }
+        applyShortcut()
         monitor.install()
         // Global key monitoring only works once Accessibility is allowed; re-arm when it is.
         trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -290,6 +350,12 @@ final class DictationController {
             }
         }
         log("dictation: ready (accessibility \(Inserter.trusted))")
+    }
+
+    /// Follows the dictation shortcut: a double-tapped modifier, or (via a hot key) a key combination.
+    func applyShortcut() {
+        let s = ShortcutCenter.shared[.dictate]
+        monitor.modifier = s.isDoubleTap ? s.tapFlags : nil
     }
 
     func toggle() {
@@ -323,7 +389,7 @@ final class DictationController {
             self.targetApp = NSWorkspace.shared.frontmostApplication?.localizedName
             self.model.partial = ""
             self.model.phase = .listening
-            Sounds.tick()
+            Sounds.listen()
             self.showHUD()
             log("dictation: listening")
         }
@@ -341,11 +407,14 @@ final class DictationController {
     func finish() {
         guard model.phase == .listening, let s = speech else { return }
         model.phase = .tidying
-        Sounds.tick()
+        Sounds.heard()
         s.stop { [weak self] raw in
             guard let self else { return }
             self.speech = nil
-            Task { @MainActor in await self.deliver(raw) }
+            Task { @MainActor in
+                let text = await s.bestTranscript(apple: raw, hints: SnippetStore.shared.triggers)
+                await self.deliver(text)
+            }
         }
     }
 
@@ -367,6 +436,14 @@ final class DictationController {
         model.history.insert(final, at: 0)
         if model.history.count > 10 { model.history.removeLast() }
 
+        // Bubble's own panels (Ask Bubble) take the text directly: pasting with ⌘V would go to
+        // whichever app is in front, since those panels never make Bubble the active app.
+        if let own = ownTextTarget, own(final) {
+            model.phase = .done("Typed into Ask Bubble")
+            log("dictation: delivered (Bubble panel)")
+            hideHUD(after: 1.6)
+            return
+        }
         let target: (editable: Bool, app: String?) = Inserter.trusted ? Inserter.focusedTextField() : (false, nil)
         if target.editable {
             Inserter.paste(final)
@@ -476,7 +553,9 @@ struct DictationPill: View {
 
     private var subtitle: String? {
         switch model.phase {
-        case .listening: return model.partial.isEmpty ? "Double-tap ⌥ to finish · Esc to cancel" : model.partial
+        case .listening:
+            let s = ShortcutCenter.shared[.dictate]
+            return model.partial.isEmpty ? (s.isDoubleTap ? "Tap \(s.tapSymbol) to finish · Esc to cancel" : "\(s.label) to finish · Esc to cancel") : model.partial
         case .done: return model.last
         default: return nil
         }
