@@ -1,7 +1,7 @@
 // Voice typing. Double-tap Option anywhere (or the shortcut chosen in settings): Bubble listens
-// (Apple's on-device speech recognition), tidies what you said, expands snippets, then types it
-// into the text box you're in. If no text box is focused, the text goes to the Scratchpad in
-// Bubble's window and onto the clipboard. Tap Option once to finish; Esc cancels.
+// (Whisper on this Mac, or Apple's on-device speech recognition), tidies what you said, expands
+// snippets, then types it into the text box you're in. If no text box is focused, the text goes
+// onto the clipboard. It finishes by itself when you stop talking, or tap Option once; Esc cancels.
 //
 // Needs Accessibility access (to notice Option taps in other apps and to type into them).
 
@@ -78,6 +78,16 @@ final class ModifierTapMonitor {
 final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     var onPartial: ((String) -> Void)?
     var onLevel: ((Float) -> Void)?
+    /// Called once when you've spoken and then gone quiet for `silenceAfter` seconds (or said
+    /// nothing for a while). Judged from the mic level, so it works even when Apple's live text lags.
+    var onSilence: (() -> Void)?
+    var silenceAfter: TimeInterval = 1.6
+    private var noiseFloor: Float = 1
+    private var loudFrames = 0
+    private var heardSpeech = false
+    private var quietSince: Date?
+    private var startedAt = Date()
+    private var silenceFired = false
     private var session: AVCaptureSession?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -110,6 +120,7 @@ final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         WhisperServer.shared.warmUp()
         recorded = Data()
         converter = nil
+        noiseFloor = 1; loudFrames = 0; heardSpeech = false; quietSince = nil; silenceFired = false; startedAt = Date()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true  // audio never leaves the Mac
         request.shouldReportPartialResults = true
@@ -196,7 +207,28 @@ final class SpeechSession: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         guard count > 0 else { return }
         let db = 10 * log10(max(sum / Float(count), 1e-12))
         let level = max(0, min(1, (db + 55) / 50))
-        DispatchQueue.main.async { self.onLevel?(level) }
+        DispatchQueue.main.async { self.onLevel?(level); self.watchSilence(level) }
+    }
+
+    /// A simple voice detector: the quietest level seen is the room; well above it is you talking.
+    private func watchSilence(_ level: Float) {
+        guard onSilence != nil, !silenceFired else { return }
+        noiseFloor = level < noiseFloor ? level : noiseFloor + (level - noiseFloor) * 0.005
+        let speaking = level > noiseFloor + 0.15 && level > 0.18
+        if speaking {
+            loudFrames += 1
+            if loudFrames >= 3 { heardSpeech = true }
+            quietSince = nil
+        } else {
+            loudFrames = 0
+            if heardSpeech {
+                let since = quietSince ?? Date()
+                quietSince = since
+                if Date().timeIntervalSince(since) >= silenceAfter { silenceFired = true; onSilence?() }
+            } else if Date().timeIntervalSince(startedAt) > 12 {
+                silenceFired = true; onSilence?()  // nothing said at all
+            }
+        }
     }
 }
 
@@ -320,7 +352,9 @@ final class DictationModel: ObservableObject {
     @Published var removeFillers = Settings.d.object(forKey: "dictFillers") as? Bool ?? true { didSet { Settings.d.set(removeFillers, forKey: "dictFillers") } }
     @Published var fixCorrections = Settings.d.object(forKey: "dictCorrections") as? Bool ?? true { didSet { Settings.d.set(fixCorrections, forKey: "dictCorrections") } }
     @Published var aiPolish = Settings.d.object(forKey: "dictAIPolish") as? Bool ?? false { didSet { Settings.d.set(aiPolish, forKey: "dictAIPolish") } }
-    @Published var hasAPIKey = Keychain.apiKey != nil
+    @Published var hasAPIKey = Keychain.hasKey
+    /// Finish by itself when you stop talking (a single ⌥ tap still finishes straight away).
+    @Published var autoStop = Settings.d.object(forKey: "dictAutoStop") as? Bool ?? true { didSet { Settings.d.set(autoStop, forKey: "dictAutoStop") } }
 }
 
 final class DictationController {
@@ -377,6 +411,7 @@ final class DictationController {
             let s = SpeechSession()
             s.onPartial = { [weak self] t in self?.model.partial = t }
             s.onLevel = { [weak self] l in self?.model.level = l }
+            if self.model.autoStop { s.onSilence = { [weak self] in self?.finish() } }
             do {
                 try s.start(hints: SnippetStore.shared.triggers)
             } catch {
@@ -555,7 +590,8 @@ struct DictationPill: View {
         switch model.phase {
         case .listening:
             let s = ShortcutCenter.shared[.dictate]
-            return model.partial.isEmpty ? (s.isDoubleTap ? "Tap \(s.tapSymbol) to finish · Esc to cancel" : "\(s.label) to finish · Esc to cancel") : model.partial
+            let finish = model.autoStop ? "Talk, then pause" : (s.isDoubleTap ? "Tap \(s.tapSymbol) to finish" : "\(s.label) to finish")
+            return model.partial.isEmpty ? finish + " · Esc to cancel" : model.partial
         case .done: return model.last
         default: return nil
         }

@@ -108,6 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         BubbleToolServer.shared.start()
         dictation.ownTextTarget = { [weak self] text in self?.assistant.takeDictation(text) ?? false }
         dictation.start()
+        // Load Whisper now, so the first dictation is as accurate as the rest.
+        if Settings.wantsDictate || Settings.wantsAssist { WhisperServer.shared.warmUp() }
         log("launched; screen access = \(CGPreflightScreenCaptureAccess())")
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()

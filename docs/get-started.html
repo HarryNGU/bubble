@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get started · Bubble</title>
+<meta name="description" content="Install Bubble, set up permissions, connect your AI and learn the shortcuts.">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#070c1f">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'none'">
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/style.css?v=5">
+</head>
+<body>
+<div class="nav-shell">
+<nav class="bar" aria-label="Main">
+<a class="brand" href="index.html"><span class="logo"></span>Bubble</a>
+<div class="links"><span class="glide"></span><a href="index.html#features">Features</a><a href="get-started.html" aria-current="page">Get started</a><a href="security.html">Safety</a><a href="faq.html">FAQ</a></div>
+<a href="index.html#download" class="btn primary small nav-cta">Download</a>
+<button class="menu-btn" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+</nav>
+</div>
+<div class="drawer"><a href="index.html#features">Features</a><a href="get-started.html" aria-current="page">Get started</a><a href="security.html">Safety</a><a href="faq.html">FAQ</a><a href="index.html#download" class="btn primary">Download for Mac</a></div>
+<main>
+<section class="page-head"><div class="wrap narrow"><span class="kicker rise">Get started</span><h1 class="rise" style="--d:.05s">Set up Bubble in two minutes</h1><p class="rise" style="--d:.1s">Install it, say hello, and Bubble walks you through the rest. Everything after installing is optional.</p></div></section>
+<div class="wrap narrow doc">
+
+<h2 id="install">1. Install</h2>
+<ol class="steps">
+<li><strong>Download Bubble</strong><p>From the <a href="index.html#download">download button</a>. Your browser saves a file called <code>Bubble-<span data-release="version">1.1.0</span>.dmg</code>.</p></li>
+<li><strong>Drag Bubble into Applications</strong><p>Open the downloaded file and drag the Bubble icon onto the Applications folder.</p></li>
+<li><strong>Open it</strong><p>Open Bubble from Applications.</p>
+<div data-notarized="true" hidden><p>Bubble is signed and notarised by Apple, so it opens like any other app.</p></div>
+<div data-notarized="false"><p>The first time, macOS asks you to confirm: open System Settings → Privacy &amp; Security and click <strong>Open Anyway</strong> next to Bubble. You only do this once.</p></div>
+</li>
+</ol>
+<details class="note" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">Want to check your download is genuine?</summary>
+<p>Open Terminal and run <code>shasum -a 256 ~/Downloads/Bubble-*.dmg</code>. It should match this fingerprint exactly:</p>
+<div class="checksum" id="sha" data-release="sha256">Loading…</div>
+<p style="margin-top:8px"><button class="btn ghost small" data-copy="#sha">Copy fingerprint</button></p></details>
+
+<h2 id="welcome">2. The welcome tour</h2>
+<p>The first time Bubble opens, it introduces itself in a short chat. It asks what to call you (optional, and kept on your Mac), lets you pick what you'd like help with, then asks for each permission one at a time, saying why before macOS shows its own prompt. Skip any you like; Bubble asks again only when you use that feature.</p>
+<table>
+<tr><th>Permission</th><th>Why Bubble asks</th><th>Needed for</th></tr>
+<tr><td>Screen Recording</td><td>To record your screen, to take a screenshot when you ask Bubble about it, and to hear your Mac's sound when you turn on Listen.</td><td>Record, Ask, Listen</td></tr>
+<tr><td>Camera</td><td>For the round camera bubble in recordings. Never used otherwise.</td><td>Record (optional)</td></tr>
+<tr><td>Microphone</td><td>Your voice in recordings, dictation and when you talk to Bubble.</td><td>Record, Dictate, Talk</td></tr>
+<tr><td>Speech Recognition</td><td>Turning speech into text on your Mac.</td><td>Dictate, Ask Bubble, captions</td></tr>
+<tr><td>Accessibility</td><td>To notice the ⌥⌥ double-tap in other apps and type text where your cursor is.</td><td>Dictate, Ask Bubble messages</td></tr>
+<tr><td>Automation</td><td>Asked only if you have Ask Bubble use an app such as Mail or Messages for you.</td><td>Ask Bubble actions</td></tr>
+</table>
+<p class="note">After allowing Screen Recording, macOS may ask you to quit and reopen Bubble. Your choices are saved. You can review or remove any permission later in System Settings → Privacy &amp; Security.</p>
+
+<h2 id="connect">3. Connect your AI (optional)</h2>
+<p>Ask Bubble needs an AI to answer. The tour asks which you'd like, or you can skip it:</p>
+<ul>
+<li><strong>Claude Code on your Mac (recommended).</strong> If you already use <a href="https://claude.com/claude-code">Claude Code</a>, Ask Bubble uses it with your own Claude plan. It brings your memory notes and your connected apps (like Gmail and Calendar). Sign in once by opening Terminal, running <code>claude</code> and typing <code>/login</code>.</li>
+<li><strong>An Anthropic API key.</strong> Create one at console.anthropic.com and paste it into Bubble. It's stored in your Mac's Keychain and billed to your Anthropic account.</li>
+<li><strong>Not now.</strong> Recording and dictation work without any AI.</li>
+</ul>
+<p>Other assistants such as ChatGPT or Gemini can't be connected yet.</p>
+<p>Before Ask Bubble can see or hear anything, it shows you its ground rules and asks you to agree. You can read them on the <a href="security.html#rules">safety page</a>.</p>
+
+<h2 id="whisper">4. Sharper voice and captions (optional)</h2>
+<p>Whisper is a free speech model that runs on your Mac and is much more accurate than the built-in one. To use it, install <a href="https://brew.sh">Homebrew</a>, run <code>brew install whisper-cpp</code> in Terminal, then download the model from Bubble's welcome tour or reel editor (574 MB, once). Nothing is uploaded.</p>
+
+<h2 id="shortcuts">5. Shortcuts</h2>
+<table>
+<tr><th>Keys</th><th>What it does</th></tr>
+<tr><td><kbd>⌥</kbd><kbd>⇧</kbd><kbd>R</kbd></td><td>Start a recording (pick what to record), or finish one</td></tr>
+<tr><td><kbd>⌥</kbd><kbd>⇧</kbd><kbd>A</kbd></td><td>Draw an area, then record it</td></tr>
+<tr><td><kbd>⌥</kbd> <kbd>⌥</kbd></td><td>Double-tap to dictate; it finishes when you pause (or tap ⌥ once)</td></tr>
+<tr><td><kbd>⌥</kbd><kbd>\</kbd></td><td>Show or hide Ask Bubble</td></tr>
+<tr><td><kbd>⌥</kbd><kbd>⇧</kbd><kbd>\</kbd></td><td>Talk to Ask Bubble</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Cancel picking, the countdown, dictation, or hide Ask Bubble</td></tr>
+</table>
+<p>Click any shortcut inside Bubble to change it.</p>
+
+<h2 id="uninstall">Uninstall</h2>
+<p>Bubble keeps nothing outside your Mac, so removing it is complete:</p>
+<ol>
+<li>Quit Bubble and drag it from Applications to the Bin.</li>
+<li>Optional: delete its data folder, <code>~/Library/Application Support/Bubble</code>, and its log, <code>~/Library/Logs/Bubble.log</code>. Your recordings in <code>~/Desktop/Bubble Recordings</code> are yours to keep or delete.</li>
+<li>Optional: if you saved an API key, open the Keychain Access app, search for "Bubble AI polish" and delete it.</li>
+<li>Optional: remove Bubble from System Settings → Privacy &amp; Security lists (Screen Recording, Microphone and so on).</li>
+</ol>
+</div>
+
+</main>
+<footer class="site"><div class="wrap"><div class="cols">
+<div><a class="brand" href="index.html"><span class="logo"></span>Bubble</a><p style="max-width:300px">Your personal assistant, living on your Mac. Free and open source. No account, no tracking, no ads.</p></div>
+<div><h4>Product</h4><ul><li><a href="index.html#download">Download</a></li><li><a href="index.html#features">Features</a></li><li><a href="get-started.html">Get started</a></li><li><a href="faq.html">FAQ</a></li><li><a href="https://github.com/HarryNGU/bubble">Source code</a></li></ul></div>
+<div><h4>Trust</h4><ul><li><a href="security.html">Safety and security</a></li><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms of use</a></li><li><a href="notices.html">Open-source notices</a></li></ul></div>
+<div><h4>Help</h4><ul><li><a href="https://github.com/HarryNGU/bubble/issues">Report a problem</a></li><li><a href="https://github.com/HarryNGU/bubble/security/advisories/new">Report a security issue</a></li><li><a href="get-started.html#uninstall">Uninstall</a></li></ul></div>
+</div><p style="margin-top:34px;font-size:14px">This site sets no cookies and uses no analytics. Hosted by GitHub Pages.</p></div></footer>
+<script src="assets/site.js?v=5"></script>
+</body>
+</html>

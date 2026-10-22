@@ -254,9 +254,21 @@ struct MainView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @StateObject private var permissions = Permissions()
     @AppStorage("page") private var page: Page = .home
+    @AppStorage("onboarded") private var onboarded = false
     private let tick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        if !onboarded || CommandLine.arguments.contains("--onboard") {
+            OnboardingView(permissions: permissions) { onboarded = true; page = .home }
+                .frame(minWidth: 860, minHeight: 560)
+                .ignoresSafeArea()
+                .onReceive(tick) { _ in permissions.refresh() }
+        } else {
+            library
+        }
+    }
+
+    private var library: some View {
         HStack(spacing: 0) {
             sidebar
             ScrollView {
@@ -370,12 +382,13 @@ struct HomePage: View {
 
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
+        let hello = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
+        return Settings.userName.isEmpty ? hello : "\(hello), \(Settings.userName)"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
-            PageHeader(title: greeting, subtitle: "Record your screen, or talk and let Bubble type.")
+            PageHeader(title: greeting, subtitle: "Your personal assistant on this Mac. Ask, talk or record, and I'll help.")
             HStack(alignment: .top, spacing: 16) {
                 ActionCard(glyph: .record, title: "Record your screen", detail: "Hover a tab, window or screen, or drag an area.",
                            shortcut: .record, button: "Start recording") { model.onStart?() }
@@ -658,6 +671,7 @@ struct DictationPage: View {
             }
             SettingsGroup(title: "How it works") {
                 SettingRow(title: "Shortcut", subtitle: finishHint + " Esc cancels. Click to change.") { ShortcutField(.dictate) }
+                SwitchRow(title: "Finish when I stop talking", subtitle: "Bubble types it after a short pause. You can still finish early yourself.", isOn: $dictation.autoStop)
                 SettingRow(title: "In a text box", subtitle: "Bubble types a tidy version where your cursor is.") { Image(systemName: "text.cursor").foregroundStyle(Palette.subtle) }
                 SettingRow(title: "Anywhere else", subtitle: "It lands in the Scratchpad below and on your clipboard.", divider: false) { Image(systemName: "doc.on.clipboard").foregroundStyle(Palette.subtle) }
             }
@@ -816,7 +830,7 @@ struct StylePage: View {
                             PrimaryButton(title: "Save") {
                                 Keychain.setAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
                                 apiKey = ""
-                                dictation.hasAPIKey = Keychain.apiKey != nil
+                                dictation.hasAPIKey = Keychain.hasKey
                             }
                             .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
@@ -824,7 +838,7 @@ struct StylePage: View {
                 }
             }
         }
-        .onAppear { dictation.hasAPIKey = Keychain.apiKey != nil }
+        .onAppear { dictation.hasAPIKey = Keychain.hasKey }
     }
 }
 
@@ -841,10 +855,10 @@ struct AssistantPage: View {
     @State private var brain = Settings.assistantBrain
     @State private var move = Settings.assistantMove
     @State private var choice = Settings.assistantModel
-    @State private var hearsMac = Settings.assistantHearsMac
-    @State private var hearsMic = Settings.assistantHearsMic
-    @State private var hasKey = Keychain.apiKey != nil
+    @State private var hasKey = Keychain.hasKey
     @State private var apiKey = ""
+    @State private var aboutMe = AboutMe.load()
+    @State private var aboutSaved = false
     @ObservedObject private var keys = ShortcutCenter.shared
 
     var body: some View {
@@ -894,7 +908,7 @@ struct AssistantPage: View {
                             PrimaryButton(title: "Save") {
                                 Keychain.setAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
                                 apiKey = ""
-                                hasKey = Keychain.apiKey != nil
+                                hasKey = Keychain.hasKey
                             }
                             .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
@@ -952,17 +966,41 @@ struct AssistantPage: View {
                 .environment(\.colorScheme, .dark)
                 .padding(.horizontal, 16).padding(.bottom, 14)
             }
+            SettingsGroup(title: "What Bubble knows about you", footer: "Using ChatGPT or another assistant? Copy the prompt, paste it there, then paste its answer here. It's saved only on this Mac (readable by your account alone) and sent with your questions so Bubble already knows you. With Claude Code, Bubble also uses your Claude memory.") {
+                SettingRow(title: "1. Ask your other assistant", subtitle: "Copies a short prompt to paste into ChatGPT, Gemini or similar.") {
+                    SecondaryButton(title: "Copy prompt", icon: "doc.on.doc") { copy(AboutMe.exportPrompt) }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("2. Paste its answer").font(.system(size: 13, weight: .medium))
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $aboutMe).font(.system(size: 13)).scrollContentBackground(.hidden).padding(6)
+                            .frame(minHeight: 110, maxHeight: 220)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Palette.canvas))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+                        if aboutMe.isEmpty {
+                            Text("• My name is…\n• I study… / I work as…").font(.system(size: 13)).foregroundStyle(Palette.subtle)
+                                .padding(.horizontal, 11).padding(.vertical, 8).allowsHitTesting(false)
+                        }
+                    }
+                    HStack {
+                        if aboutSaved { Label("Saved on this Mac", systemImage: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(.green) }
+                        Spacer()
+                        Button("Forget it") { aboutMe = ""; AboutMe.save(""); aboutSaved = false }.buttonStyle(.plain)
+                            .font(.system(size: 12.5)).foregroundStyle(Palette.subtle).disabled(aboutMe.isEmpty)
+                        PrimaryButton(title: "Save") { AboutMe.save(aboutMe); aboutSaved = true }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
             SettingsGroup(title: "Listening", footer: "Only when you turn on Listen in the panel, and a red dot shows while it's on. Sound is transcribed on this Mac and never uploaded; only the recent text goes to Claude when you ask.") {
-                SwitchRow(title: "Hear Mac audio", subtitle: "Calls, meetings, videos.", isOn: $hearsMac)
-                    .onChange(of: hearsMac) { Settings.assistantHearsMac = hearsMac }
-                SwitchRow(title: "Hear my microphone", subtitle: "What you say.", isOn: $hearsMic, divider: false)
-                    .onChange(of: hearsMic) { Settings.assistantHearsMic = hearsMic }
+                SettingRow(title: "Listen hears your Mac's sound", subtitle: "The other people on a call or meeting, or a video you're watching. Not your microphone.") { Image(systemName: "speaker.wave.2").foregroundStyle(Palette.subtle) }
+                SettingRow(title: "To talk to Bubble yourself", subtitle: "Use Talk (\(ShortcutCenter.shared.label(.assistVoice))) in the panel.", divider: false) { Image(systemName: "mic").foregroundStyle(Palette.subtle) }
             }
             SettingsGroup(title: "Seeing your screen", footer: "Each time you ask, Bubble sends one screenshot of the display you're on (without its own panel). Turn it off with the eye button in the panel. The panel itself shows up in screen shares and recordings, like any window.") {
                 SettingRow(title: "Screenshot when you ask", subtitle: "On by default.", divider: false) { Image(systemName: "eye").foregroundStyle(Palette.subtle) }
             }
         }
-        .onAppear { hasKey = Keychain.apiKey != nil }
+        .onAppear { hasKey = Keychain.hasKey }
     }
 }
 
@@ -1011,6 +1049,9 @@ struct SettingsPage: View {
                 }
             }
             SettingsGroup(title: "About") {
+                SettingRow(title: "Welcome tour", subtitle: "Meet Bubble again: permissions, connecting your AI and its promises.") {
+                    SecondaryButton(title: "Show again") { Settings.onboardScene = 0; Settings.onboarded = false }
+                }
                 SettingRow(title: "Bubble", subtitle: "Free and open source. No account, no tracking.", divider: false) {
                     SecondaryButton(title: "GitHub", icon: "arrow.up.right") { NSWorkspace.shared.open(URL(string: "https://github.com/HarryNGU/bubble")!) }
                 }

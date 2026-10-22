@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety and security · Bubble</title>
+<meta name="description" content="How Bubble keeps you safe: approvals, protections and how to check your download.">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#070c1f">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'none'">
+<link rel="icon" href="assets/favicon.png">
+<link rel="stylesheet" href="assets/style.css?v=5">
+</head>
+<body>
+<div class="nav-shell">
+<nav class="bar" aria-label="Main">
+<a class="brand" href="index.html"><span class="logo"></span>Bubble</a>
+<div class="links"><span class="glide"></span><a href="index.html#features">Features</a><a href="get-started.html">Get started</a><a href="security.html" aria-current="page">Safety</a><a href="faq.html">FAQ</a></div>
+<a href="index.html#download" class="btn primary small nav-cta">Download</a>
+<button class="menu-btn" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+</nav>
+</div>
+<div class="drawer"><a href="index.html#features">Features</a><a href="get-started.html">Get started</a><a href="security.html" aria-current="page">Safety</a><a href="faq.html">FAQ</a><a href="index.html#download" class="btn primary">Download for Mac</a></div>
+<main>
+<section class="page-head"><div class="wrap narrow"><span class="kicker rise">Trust</span><h1 class="rise" style="--d:.05s">Safety and security</h1><p class="rise" style="--d:.1s">How Bubble keeps you safe: approvals, protections and how to check your download.</p></div></section><div class="wrap narrow doc"><p class="updated">Last updated 22 October 2026</p>
+<p>Bubble can see your screen, hear your voice and act in your apps, so it's built to be careful by default. Here's exactly how.</p>
+
+<h2 id="rules">The ground rules</h2>
+<p>Before Ask Bubble can see or hear anything, Bubble shows you these rules and asks you to agree:</p>
+<ul>
+<li><strong>It sees your screen only when you ask.</strong> Each question sends one screenshot to your AI. Turn the eye off for private screens, like banking.</li>
+<li><strong>Listening is off until you turn it on,</strong> and a red dot shows while it's on.</li>
+<li><strong>Nothing is sent without you.</strong> Emails need your Approve. Messages are typed in for you to send.</li>
+<li><strong>Private files stay private.</strong> It asks before reading key, password or history files, and before opening links that carry data.</li>
+<li><strong>It's visible.</strong> The chat shows up in screen shares, and it isn't for cheating or secret recording.</li>
+</ul>
+
+<h2>Actions need your approval</h2>
+<p>Looking things up runs freely. Anything that writes files, runs commands, or sends, creates, edits or deletes in your apps shows an Approve or Deny card first. You can say "yes" or "no" out loud. "Always allow" applies to one tool only, and never overrides the protections below.</p>
+
+<h2>Protection from tricks</h2>
+<p>A web page, email or document could contain hidden text meant to trick an AI into doing something you didn't ask for (called prompt injection). Bubble always asks you before:</p>
+<ul>
+<li>reading files that hold keys, passwords or private history (for example <code>~/.ssh</code>, keychains, browser data, shell history, <code>.env</code> files);</li>
+<li>searching your whole home folder;</li>
+<li>opening a web address that carries data in it, which is a common way to leak information.</li>
+</ul>
+
+<h2>Your accounts and keys</h2>
+<ul>
+<li>Bubble never asks for or stores your passwords. It works with the apps and browser you're already signed into.</li>
+<li>Claude Code keeps its own sign-in in your Keychain; Bubble never sees it.</li>
+<li>An API key you add is stored in the macOS Keychain, never in a file.</li>
+</ul>
+
+<h2>Inside the app</h2>
+<ul>
+<li>Bubble's helper for Ask Bubble listens only on your own Mac (127.0.0.1) and needs a random secret that changes every launch, so other devices and websites can't use it.</li>
+<li>The app uses Apple's hardened runtime and asks only for the system permissions it needs: camera, microphone and automation.</li>
+<li>Speech recognition and Whisper run on your Mac; audio is never uploaded.</li>
+</ul>
+
+<h2 id="verify">Check your download</h2>
+<p>Every release publishes a SHA-256 fingerprint on the <a href="index.html#download">download page</a> and on GitHub. In Terminal, run <code>shasum -a 256 ~/Downloads/Bubble-*.dmg</code> and compare. If they don't match, don't open the file. Only download Bubble from this site or <a href="https://github.com/HarryNGU/bubble/releases">its GitHub releases</a>.</p>
+<p class="note" data-notarized="false">Early versions are signed but not yet notarised by Apple, so macOS warns the first time you open them. Notarisation (Apple's malware check) is planned. Until then, the fingerprint and the public source code are how you can check the download.</p>
+
+<h2 id="report">Report a security problem</h2>
+<p>Please report it privately through <a href="https://github.com/HarryNGU/bubble/security/advisories/new">GitHub's private vulnerability reporting</a>, not in a public issue. Include what you found and how to reproduce it. We'll reply as soon as we can and credit you if you'd like.</p>
+</div>
+</main>
+<footer class="site"><div class="wrap"><div class="cols">
+<div><a class="brand" href="index.html"><span class="logo"></span>Bubble</a><p style="max-width:300px">Your personal assistant, living on your Mac. Free and open source. No account, no tracking, no ads.</p></div>
+<div><h4>Product</h4><ul><li><a href="index.html#download">Download</a></li><li><a href="index.html#features">Features</a></li><li><a href="get-started.html">Get started</a></li><li><a href="faq.html">FAQ</a></li><li><a href="https://github.com/HarryNGU/bubble">Source code</a></li></ul></div>
+<div><h4>Trust</h4><ul><li><a href="security.html">Safety and security</a></li><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms of use</a></li><li><a href="notices.html">Open-source notices</a></li></ul></div>
+<div><h4>Help</h4><ul><li><a href="https://github.com/HarryNGU/bubble/issues">Report a problem</a></li><li><a href="https://github.com/HarryNGU/bubble/security/advisories/new">Report a security issue</a></li><li><a href="get-started.html#uninstall">Uninstall</a></li></ul></div>
+</div><p style="margin-top:34px;font-size:14px">This site sets no cookies and uses no analytics. Hosted by GitHub Pages.</p></div></footer>
+<script src="assets/site.js?v=5"></script>
+</body>
+</html>

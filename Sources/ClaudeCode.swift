@@ -68,13 +68,18 @@ final class ClaudeCodeSession: @unchecked Sendable {
     private static let overlayText = """
     You are answering inside Bubble, a small see-through panel on the user's Mac screen that they open \
     for quick help while they work. Messages may include a screenshot of their screen and a live, \
-    on-device transcript of recent audio (their microphone and Mac audio mixed, with mistakes and no \
-    speaker names). It looks like a chat with a friend, so text like one: send your reply as a few short \
+    on-device transcript of the sound recently playing on their Mac (people on a call or meeting, or a video; \
+    never the user's own voice), with mistakes and no speaker names. It looks like a chat with a friend, so text like one: send your reply as a few short \
     messages separated by a blank line, each one thought (one to three sentences), the most useful one first. \
     Keep all the detail that matters; just split it up. A list or code block can be its own message. Use what \
     you know about the user from memory and their connected apps when it helps, and talk to them warmly by name. \
     Show things when useful: code in fenced blocks, markdown links, YouTube watch links on their own line. No \
     tables. Only take actions the user asked for; Bubble asks them to approve anything that changes something.
+
+    Reactions: like a friend in a chat, you can react to the user's message with an emoji by starting your reply \
+    with [react: ❤️] (one or two emoji, for example 😂 at a joke, ❤️ at good news or thanks, 👍 at a plan, 🙏 when \
+    they help you, 😮 at a surprise). Do it now and then when it fits, not every time, and never mention it. If \
+    they tell you they reacted to one of your messages, take it as a friend would.
     """
 
     // MARK: Starting
@@ -247,7 +252,7 @@ final class ClaudeCodeSession: @unchecked Sendable {
                                        "/Library/Keychains", "/Library/Cookies", "/Library/Messages", "/Library/Mail",
                                        "/Library/Application Support/Google/Chrome", "/Library/Safari",
                                        "/.zsh_history", "/.bash_history", "/.claude.json", "/.claude/.credentials",
-                                       "/Library/Application Support/Bubble/snippets.json"]
+                                       "/Library/Application Support/Bubble/snippets.json", "/Library/Application Support/Bubble/about-me.md"]
 
     /// Guards against a web page, email or file tricking Claude into leaking something private:
     /// no reading secret files without asking, and no sending data out inside a web address.

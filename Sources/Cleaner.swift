@@ -6,6 +6,7 @@
 // to Claude with the user's own API key; if that fails, the on-device result is used.
 
 import Foundation
+import LocalAuthentication
 import Security
 
 enum Cleaner {
@@ -133,16 +134,15 @@ enum Cleaner {
             system += "\nIf any of these phrases appear, keep them exactly as written: " + keep.map { "\"\($0)\"" }.joined(separator: ", ") + "."
         }
         let body: [String: Any] = [
-            "model": "claude-opus-5-5",
-            "max_tokens": 16000,
-            "output_config": ["effort": "low"],  // quick clean-up, not deep reasoning
+            "model": "claude-haiku-5-5",          // fast: you're waiting to see your words appear
+            "max_tokens": 4000,
             "fallbacks": "default",               // retry on another model if a request is declined
             "system": system,
             "messages": [["role": "user", "content": "<transcript>\n\(transcript)\n</transcript>"]],
         ]
         var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         req.httpMethod = "POST"
-        req.timeoutInterval = 25
+        req.timeoutInterval = 8
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.setValue(key, forHTTPHeaderField: "x-api-key")
         req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
@@ -174,6 +174,18 @@ enum Cleaner {
 enum Keychain {
     private static let service = "Bubble AI polish"
     private static let account = "anthropic-api-key"
+
+    /// Whether a key is saved, without reading it or ever showing a Keychain prompt (so it's
+    /// safe to call at launch, even while the Mac is locked).
+    static var hasKey: Bool {
+        let ctx = LAContext()
+        ctx.interactionNotAllowed = true
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecAttrAccount as String: account, kSecReturnAttributes as String: true,
+                                kSecUseAuthenticationContext as String: ctx]
+        let status = SecItemCopyMatching(q as CFDictionary, nil)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
+    }
 
     static var apiKey: String? {
         var item: CFTypeRef?

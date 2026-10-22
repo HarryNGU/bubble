@@ -363,7 +363,7 @@ struct EditorPage: View {
     @StateObject private var ed: ReelEditor
     @State private var message = ""
     @State private var apiKey = ""
-    @State private var hasKey = Keychain.apiKey != nil
+    @State private var hasKey = Keychain.hasKey
 
     init(url: URL, onClose: @escaping () -> Void) {
         self.url = url
@@ -389,7 +389,7 @@ struct EditorPage: View {
                 .frame(width: 380)
             }
         }
-        .onAppear { ed.start(); hasKey = Keychain.apiKey != nil }
+        .onAppear { ed.start(); hasKey = Keychain.hasKey }
         .onDisappear { ed.player.pause() }
     }
 
@@ -604,7 +604,7 @@ struct EditorPage: View {
                         PrimaryButton(title: "Save") {
                             Keychain.setAPIKey(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
                             apiKey = ""
-                            hasKey = Keychain.apiKey != nil
+                            hasKey = Keychain.hasKey
                         }
                         .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
                     }

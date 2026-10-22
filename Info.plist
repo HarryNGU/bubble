@@ -2,33 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>Bubble</string>
-    <key>CFBundleDisplayName</key>
-    <string>Bubble</string>
-    <key>CFBundleIdentifier</key>
-    <string>io.github.bubble-recorder</string>
-    <key>CFBundleExecutable</key>
-    <string>Bubble</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>15.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSCameraUsageDescription</key>
-    <string>Bubble shows your camera in a round bubble on top of your screen recording.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Bubble lists your Chrome tabs to record the one you pick, and, only when you ask Ask Bubble to, opens or drives apps like Mail and Messages.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Bubble turns speech into text on your Mac: for dictation, Ask Bubble, captions and naming recordings. Audio is never uploaded.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Bubble hears your voice for screen recordings, dictation and Ask Bubble.</string>
+	<key>CFBundleDisplayName</key>
+	<string>Bubble</string>
+	<key>CFBundleExecutable</key>
+	<string>Bubble</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.bubble-recorder</string>
+	<key>CFBundleName</key>
+	<string>Bubble</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Bubble lists your Chrome tabs to record the one you pick, and, only when you ask Ask Bubble to, opens or drives apps like Mail and Messages.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Bubble shows your camera in a round bubble on top of your screen recording.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bubble hears your voice for screen recordings, dictation and Ask Bubble.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Bubble turns speech into text on your Mac: for dictation, Ask Bubble, captions and naming recordings. Audio is never uploaded.</string>
 </dict>
 </plist>

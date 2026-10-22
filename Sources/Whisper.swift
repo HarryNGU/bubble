@@ -230,7 +230,7 @@ final class WhisperServer: @unchecked Sendable {
                        "-t", "\(max(4, ProcessInfo.processInfo.activeProcessorCount - 2))", "-l", lang, "-nt"]
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
-        do { try p.run(); process = p; log("whisper: voice server starting") } catch { log("whisper: server failed: \(error.localizedDescription)") }
+        do { try p.run(); process = p; log("whisper: voice server starting"); scheduleIdleStop() } catch { log("whisper: server failed: \(error.localizedDescription)") }
     }
 
     /// Text for a 16 kHz mono 16-bit recording, or nil (then Apple's text is used).
@@ -251,8 +251,8 @@ final class WhisperServer: @unchecked Sendable {
         body.append(wav)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
 
-        // The server may still be loading the model: try for up to ~8 seconds.
-        let deadline = Date().addingTimeInterval(8)
+        // The server may still be loading the model: try for up to ~20 seconds.
+        let deadline = Date().addingTimeInterval(20)
         while Date() < deadline {
             var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/inference")!)
             req.httpMethod = "POST"
@@ -273,11 +273,11 @@ final class WhisperServer: @unchecked Sendable {
         return nil
     }
 
-    /// Frees the memory after 15 minutes without voice.
+    /// Frees the memory after 30 minutes without voice.
     private func scheduleIdleStop() {
         DispatchQueue.main.async {
             self.idle?.invalidate()
-            self.idle = Timer.scheduledTimer(withTimeInterval: 900, repeats: false) { [weak self] _ in self?.stop() }
+            self.idle = Timer.scheduledTimer(withTimeInterval: 1800, repeats: false) { [weak self] _ in self?.stop() }
         }
     }
 
