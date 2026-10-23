@@ -70,6 +70,7 @@ enum ChatStore {
 
     static func deleteAll() {
         for c in all() { delete(c.id) }
+        LocalPicture.deleteAll()
     }
 
     /// Removes chats older than you chose to keep them.
@@ -79,5 +80,6 @@ enum ChatStore {
         guard days > 0 else { return }
         let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
         for c in all() where c.updated < cutoff { delete(c.id) }
+        LocalPicture.prune(olderThan: cutoff)
     }
 }

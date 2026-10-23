@@ -310,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @objc func showAbout() {
         NSApp.activate(ignoringOtherApps: true)
-        let credits = NSMutableAttributedString(string: "Your personal assistant, living on your Mac.\nFree and open source. No account, no tracking.\n\n",
+        let credits = NSMutableAttributedString(string: "Your ultimate personal assistant, living on your Mac.\nFree and open source. No account, no tracking.\n\n",
                                                 attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
         credits.append(NSAttributedString(string: "harryngu.github.io/bubble", attributes: [.link: URL(string: "https://harryngu.github.io/bubble/")!, .font: NSFont.systemFont(ofSize: 11)]))
         let para = NSMutableParagraphStyle()

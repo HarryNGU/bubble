@@ -1,6 +1,6 @@
 # Bubble
 
-A free, open-source personal assistant that lives on your Mac. Ask it about what's on your screen, have it write, reply and get tasks done with your approval, talk instead of typing, and record and edit videos. In the spirit of Cluely, Wispr Flow and Loom, but local-first and open.
+The ultimate personal assistant that lives on your Mac, free and open source. Ask it about what's on your screen, have it write, reply and get tasks done with your approval, talk instead of typing, and record and edit videos. In the spirit of Cluely, Wispr Flow and Loom, but local-first and open.
 
 No account, no analytics, no subscription.
 

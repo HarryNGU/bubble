@@ -53,14 +53,14 @@ def page(name, title, desc, body, dark_top=False):
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{desc}">
 <meta property="og:url" content="{SITE}{'' if name == 'index.html' else name}">
-<meta property="og:image" content="{SITE}assets/og.png">
+<meta property="og:image" content="{SITE}assets/og.png?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Bubble, your personal assistant living on your Mac, answering a question in a floating chat">
+<meta property="og:image:alt" content="Bubble, your ultimate personal assistant living on your Mac, answering a question in a floating chat">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{title}">
 <meta name="twitter:description" content="{desc}">
-<meta name="twitter:image" content="{SITE}assets/og.png">
+<meta name="twitter:image" content="{SITE}assets/og.png?v=2">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'none'">
 <link rel="icon" href="assets/favicon.png">
 <link rel="stylesheet" href="assets/style.css?v={V}">
@@ -79,7 +79,7 @@ def page(name, title, desc, body, dark_top=False):
 {body}
 </main>
 <footer class="site"><div class="wrap"><div class="cols">
-<div><a class="brand" href="index.html"><span class="logo"></span>Bubble</a><p style="max-width:300px">Your personal assistant, living on your Mac. Free and open source. No account, no tracking, no ads.</p></div>
+<div><a class="brand" href="index.html"><span class="logo"></span>Bubble</a><p style="max-width:300px">Your ultimate personal assistant, living on your Mac. Free and open source. No account, no tracking, no ads.</p></div>
 <div><h4>Product</h4><ul><li><a href="index.html#download">Download</a></li><li><a href="index.html#features">Features</a></li><li><a href="get-started.html">Get started</a></li><li><a href="faq.html">FAQ</a></li><li><a href="{REPO}">Source code</a></li></ul></div>
 <div><h4>Trust</h4><ul><li><a href="security.html">Safety and security</a></li><li><a href="privacy.html">Privacy policy</a></li><li><a href="terms.html">Terms of use</a></li><li><a href="notices.html">Open-source notices</a></li></ul></div>
 <div><h4>Help</h4><ul><li><a href="{REPO}/issues">Report a problem</a></li><li><a href="{REPO}/security/advisories/new">Report a security issue</a></li><li><a href="get-started.html#uninstall">Uninstall</a></li></ul></div>
@@ -157,7 +157,7 @@ CONTROL_HTML = "".join(f'<div class="row"><b>{a}</b><span>{b}</span>{c}</div>' f
 HOME = f"""
 <section class="hero">
 <div class="wrap">
-<h1 class="rise">Your personal assistant,<br><span class="quiet">living on your Mac.</span></h1>
+<h1 class="rise">Your ultimate<br>personal assistant,<br><span class="quiet">living on your Mac.</span></h1>
 <p class="lede rise" style="--d:.08s">Bubble floats over whatever you're doing, in Gmail, Notion, Zoom or anywhere else, and helps right there. It already knows you, and it only acts when you say so.</p>
 <div class="actions rise" style="--d:.14s">
 <a class="btn primary" href="#download">{ICON['apple']}Download for Mac</a>
@@ -481,7 +481,7 @@ NOT_FOUND = head("404", "Page not found", "That page doesn't exist.") + '<div cl
 
 if __name__ == "__main__":
     DOCS.mkdir(exist_ok=True)
-    page("index.html", "Bubble · Your personal assistant on your Mac", "Ask about anything on your screen, get emails and tasks done, talk instead of typing and record in a click. Free, private and open source, for Mac.", HOME)
+    page("index.html", "Bubble · Your ultimate personal assistant on your Mac", "Ask about anything on your screen, get emails and tasks done, talk instead of typing and record in a click. Free, private and open source, for Mac.", HOME)
     page("get-started.html", "Get started · Bubble", "Install Bubble, set up permissions, connect your AI and learn the shortcuts.",
          head("Get started", "Set up Bubble in two minutes", "Install it, say hello, and Bubble walks you through the rest. Everything after installing is optional.") + STARTED)
     page("faq.html", "FAQ · Bubble", "Answers to common questions about Bubble.", FAQ)

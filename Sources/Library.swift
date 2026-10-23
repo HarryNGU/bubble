@@ -388,7 +388,7 @@ struct HomePage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
-            PageHeader(title: greeting, subtitle: "Your personal assistant on this Mac. Ask, talk or record, and I'll help.")
+            PageHeader(title: greeting, subtitle: "Your ultimate personal assistant on this Mac. Ask, talk or record, and I'll help.")
             HStack(alignment: .top, spacing: 16) {
                 ActionCard(glyph: .record, title: "Record your screen", detail: "Hover a tab, window or screen, or drag an area.",
                            shortcut: .record, button: "Start recording") { model.onStart?() }

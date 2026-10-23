@@ -114,7 +114,7 @@ struct OnboardingView: View {
         switch scene {
         case .hello:
             return ["Hi, I'm Bubble 👋",
-                    "I'm a personal assistant that lives on your Mac. Whatever you're working on, I can help: answer questions about what's on your screen, write and reply for you, type what you say, record and edit videos, and get tasks done.",
+                    "I'm the ultimate personal assistant, and I live on your Mac. Whatever you're working on, I can help: answer questions about what's on your screen, write and reply for you, type what you say, record and edit videos, and get tasks done.",
                     "Let's get to know each other. It takes about two minutes."]
         case .name:
             return ["First, what should I call you?"]

@@ -8,6 +8,7 @@
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
+import CryptoKit
 import ScreenCaptureKit
 import Speech
 import SwiftUI
@@ -301,7 +302,10 @@ several matching pictures from Wikimedia Commons (diagrams, anatomy, maps, place
 apparatus). For any chemical compound or molecule, always put [[molecule: compound name]] on its own line \
 (for example [[molecule: caffeine]]) and Bubble shows its 2D and 3D structure from PubChem. Use these \
 whenever a picture would help someone learn or decide. Prefer them to markdown image links; you don't need \
-to search the web for pictures yourself.
+to search the web for pictures yourself. To show a picture file on this Mac (one you made, such as a chart \
+or diagram, or one the user has), put ![short description](/full/path/to/file.png) on its own line and \
+Bubble shows it right in the chat (PNG, JPEG, GIF, HEIC, WebP, TIFF, SVG or PDF). Do this instead of \
+opening it in a browser or Preview, and never upload a picture anywhere just to show it.
 """
 
 /// What another assistant (ChatGPT, say) knows about you, brought over by pasting, so Bubble isn't a
@@ -1547,7 +1551,7 @@ struct RichAnswer: View {
             if let q = Self.capture(#"^\[\[\s*molecule\s*:\s*(.+?)\s*\]\]$"#, in: line) {
                 flush(); out.append(.molecule(q)); continue
             }
-            if let u = Self.capture(#"^!\[[^\]]*\]\((https?://[^)\s]+)\)$"#, in: line).flatMap(URL.init(string:)) {
+            if let u = Self.pictureLine(line) {
                 flush(); out.append(.image(u)); continue
             }
             prose.append(line.hasPrefix("#") ? "**" + line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces) + "**" : raw)
@@ -1561,6 +1565,17 @@ struct RichAnswer: View {
         if let c = code { out.append(.code(lang: lang, body: c.joined(separator: "\n"))) }
         flush()
         return out
+    }
+
+    /// A line that is only a picture: a markdown image, [[picture: …]], or a bare picture address or file path.
+    /// Pictures can come from the web or from a file on this Mac (for example one Claude just made).
+    static func pictureLine(_ line: String) -> URL? {
+        let target = capture(#"^!\[[^\]]*\]\(\s*<?(.+?)>?\s*\)$"#, in: line)
+            ?? capture(#"^\[\[\s*(?:picture|image|file)\s*:\s*(.+?)\s*\]\]$"#, in: line)
+            ?? (LocalPicture.isPicture(line.trimmingCharacters(in: CharacterSet(charactersIn: "`<>"))) ? line.trimmingCharacters(in: CharacterSet(charactersIn: "`<>")) : nil)
+        guard let t = target?.trimmingCharacters(in: .whitespaces), !t.isEmpty else { return nil }
+        if t.hasPrefix("http://") || t.hasPrefix("https://") { return URL(string: t) }
+        return LocalPicture.url(t)
     }
 
     /// The first capture group of `pattern` in `s`.
@@ -1714,19 +1729,102 @@ struct LinkedPicture: View {
     var body: some View {
         Group {
             if let img {
-                Image(nsImage: img).resizable().scaledToFit().frame(maxHeight: 240)
+                Image(nsImage: img).resizable().scaledToFit().frame(maxWidth: 480, maxHeight: 420, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .help(url.isFileURL ? "Click to open in Preview" : "Click to open")
             } else if failed {
-                Label("Couldn't load this picture. Click to open it.", systemImage: "photo").font(.system(size: 12))
-                    .opacity(0.65)
+                Label(url.isFileURL ? "This picture is no longer on your Mac." : "Couldn't load this picture. Click to open it.",
+                      systemImage: "photo").font(.system(size: 12)).opacity(0.65)
             } else {
                 RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.06)).frame(height: 120).overlay(ProgressView().controlSize(.small))
             }
         }
-        .onTapGesture { NSWorkspace.shared.open(url) }
+        .onTapGesture { open() }
+        .contextMenu {
+            Button(url.isFileURL ? "Open in Preview" : "Open in Browser") { open() }
+            if let img { Button("Copy Picture") { NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([img]) } }
+            if url.isFileURL, let file = LocalPicture.existing(url) {
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+            }
+        }
         .task(id: url) {
-            img = await PictureFetch.image(url)
+            img = url.isFileURL ? LocalPicture.load(url) : await PictureFetch.image(url)
             failed = img == nil
+        }
+    }
+
+    private func open() {
+        if url.isFileURL { if let f = LocalPicture.existing(url) { NSWorkspace.shared.open(f) } }
+        else { NSWorkspace.shared.open(url) }
+    }
+}
+
+/// Picture files on this Mac shown in the chat, such as a chart Claude just drew. They are only shown here,
+/// never uploaded. Bubble keeps its own copy (in Application Support/Bubble/Pictures, readable only by you),
+/// so a saved chat still shows its pictures after a temporary file is cleaned up.
+enum LocalPicture {
+    static let kinds: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tif", "tiff", "bmp", "svg", "pdf"]
+
+    static var dir: URL {
+        let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Bubble/Pictures", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: d.path) {
+            try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        }
+        return d
+    }
+
+    /// Looks like a path or file address of a picture.
+    static func isPicture(_ s: String) -> Bool {
+        guard s.hasPrefix("/") || s.hasPrefix("~/") || s.hasPrefix("file://") else { return false }
+        return kinds.contains((s as NSString).pathExtension.lowercased())
+    }
+
+    /// A file address for a path, `~/…` path or file:// address, if it names a picture somewhere it's fine to show.
+    static func url(_ s: String) -> URL? {
+        var path: String
+        if s.hasPrefix("file://") { guard let u = URL(string: s) ?? URL(string: s.replacingOccurrences(of: " ", with: "%20")) else { return nil }; path = u.path }
+        else { path = (s.removingPercentEncoding ?? s) }
+        path = (path as NSString).expandingTildeInPath
+        guard path.hasPrefix("/"), kinds.contains((path as NSString).pathExtension.lowercased()) else { return nil }
+        let full = (path as NSString).standardizingPath
+        if ClaudeCodeSession.privatePaths.contains(where: { full.contains($0) }) { return nil }
+        return URL(fileURLWithPath: full)
+    }
+
+    private static func copyURL(_ u: URL) -> URL {
+        let key = SHA256.hash(data: Data(u.path.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return dir.appendingPathComponent(key).appendingPathExtension(u.pathExtension.lowercased())
+    }
+
+    /// The original if it's still there, otherwise Bubble's copy.
+    static func existing(_ u: URL) -> URL? {
+        for f in [u, copyURL(u)] where FileManager.default.fileExists(atPath: f.path) { return f }
+        return nil
+    }
+
+    static func load(_ u: URL) -> NSImage? {
+        let fm = FileManager.default
+        if let a = try? fm.attributesOfItem(atPath: u.path), a[.type] as? FileAttributeType == .typeRegular,
+           (a[.size] as? Int ?? 0) <= 60_000_000, let img = NSImage(contentsOf: u), img.isValid {
+            let copy = copyURL(u)
+            if Settings.chatKeepDays != 0, u.deletingLastPathComponent().standardizedFileURL != dir.standardizedFileURL {
+                try? fm.removeItem(at: copy)
+                if (try? fm.copyItem(at: u, to: copy)) != nil { try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: copy.path) }
+            }
+            return img
+        }
+        let copy = copyURL(u)
+        return fm.fileExists(atPath: copy.path) ? NSImage(contentsOf: copy) : nil
+    }
+
+    static func deleteAll() { try? FileManager.default.removeItem(at: dir) }
+
+    /// Removes copies older than chats are kept.
+    static func prune(olderThan cutoff: Date) {
+        let fm = FileManager.default
+        for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            if let d = try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, d < cutoff { try? fm.removeItem(at: f) }
         }
     }
 }

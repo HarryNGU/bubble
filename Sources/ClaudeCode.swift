@@ -262,7 +262,7 @@ final class ClaudeCodeSession: @unchecked Sendable {
 
     /// Places that hold keys, passwords and private history. Reading them, or searching inside
     /// them, always asks first, even for tools you've "always allowed".
-    private static let privatePaths = ["/.ssh", "/.aws", "/.gnupg", "/.config/gh", "/.netrc", "/.docker", "/.kube",
+    static let privatePaths = ["/.ssh", "/.aws", "/.gnupg", "/.config/gh", "/.netrc", "/.docker", "/.kube",
                                        "/Library/Keychains", "/Library/Cookies", "/Library/Messages", "/Library/Mail",
                                        "/Library/Application Support/Google/Chrome", "/Library/Safari",
                                        "/.zsh_history", "/.bash_history", "/.claude.json", "/.claude/.credentials",

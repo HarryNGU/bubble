@@ -1,6 +1,6 @@
 # Testing Bubble (private beta)
 
-Thanks for trying Bubble before anyone else. It's a personal assistant that floats over your Mac: ask about your screen, dictate anywhere, have it draft things for you (it never sends without your OK), listen along to calls and videos, and record your screen.
+Thanks for trying Bubble before anyone else. It's the ultimate personal assistant, floating over your Mac: ask about your screen, dictate anywhere, have it draft things for you (it never sends without your OK), listen along to calls and videos, and record your screen.
 
 This is an early build. Things will break, and that's what you're here to find.
 
@@ -13,9 +13,9 @@ This is an early build. Things will break, and that's what you're here to find.
 
 ## Install
 
-1. Open `Bubble-1.3.0.dmg` and drag Bubble into Applications.
-2. Optional: check the file is the one that was sent. In Terminal run `shasum -a 256 Bubble-1.3.0.dmg`; it should print
-   `8686910bf38f0597d150b789d9120f3289e52fd04f90ca7bb960815977171c24`.
+1. Open `Bubble-1.3.1.dmg` and drag Bubble into Applications.
+2. Optional: check the file is the one that was sent. In Terminal run `shasum -a 256 Bubble-1.3.1.dmg`; it should print
+   `589c5f1e3bed6f473e9d18bd5466abbd99f3efa4e638f12c61714acd24b0e26a`.
 3. Open Bubble. Because this beta isn't notarised by Apple yet, macOS will refuse the first time. Open **System Settings → Privacy & Security**, scroll down to the message about Bubble, click **Open Anyway** and confirm. You only do this once per version.
 4. Bubble introduces itself in a short chat and asks for each permission as it goes. After you allow Screen Recording, macOS may ask you to quit and reopen it; it picks up where you left off.
 
@@ -32,6 +32,7 @@ Tick these off and note anything odd, slow, confusing or ugly.
 **Ask Bubble** (⌥\ to show or hide)
 - [ ] Ask about something on screen: a web page, a PDF, a spreadsheet.
 - [ ] Ask for a picture, a molecule ("show me caffeine's structure") or a YouTube video.
+- [ ] Ask it to make a chart or diagram for you. The picture should appear right in the chat, not in a browser tab; click it to open it in Preview.
 - [ ] Ask it to draft an email or a message. Check that it shows an Allow / Deny card before sending anything, and that Deny really stops it.
 - [ ] Talk to it with ⌥⇧\ and stop speaking. Does it finish on its own?
 - [ ] Turn on **Listen** while a YouTube video plays. Does the transcript follow the video, and ignore your own voice?
