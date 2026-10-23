@@ -8,6 +8,7 @@ from pathlib import Path
 
 DOCS = Path(__file__).resolve().parent.parent / "docs"
 REPO = "https://github.com/HarryNGU/bubble"
+SITE = "https://harryngu.github.io/bubble/"
 UPDATED = "22 October 2026"
 
 GLYPH = {
@@ -18,7 +19,7 @@ GLYPH = {
 }
 
 NAV = [("index.html#features", "Features"), ("get-started.html", "Get started"), ("security.html", "Safety"), ("faq.html", "FAQ")]
-V = "5"  # bump to refresh cached CSS and JS
+V = "6"  # bump to refresh cached CSS and JS
 
 ICON = {
     "lock": '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="3"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
@@ -45,7 +46,21 @@ def page(name, title, desc, body, dark_top=False):
 <title>{title}</title>
 <meta name="description" content="{desc}">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#070c1f">
+<meta name="theme-color" content="#f7f5f0">
+<link rel="canonical" href="{SITE}{'' if name == 'index.html' else name}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Bubble">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta property="og:url" content="{SITE}{'' if name == 'index.html' else name}">
+<meta property="og:image" content="{SITE}assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Bubble, your personal assistant living on your Mac, answering a question in a floating chat">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta name="twitter:image" content="{SITE}assets/og.png">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'none'">
 <link rel="icon" href="assets/favicon.png">
 <link rel="stylesheet" href="assets/style.css?v={V}">
@@ -466,7 +481,7 @@ NOT_FOUND = head("404", "Page not found", "That page doesn't exist.") + '<div cl
 
 if __name__ == "__main__":
     DOCS.mkdir(exist_ok=True)
-    page("index.html", "Bubble · Your personal assistant on your Mac", "Free, open-source personal assistant for your Mac: ask about your screen, get things done, type with your voice and record videos.", HOME)
+    page("index.html", "Bubble · Your personal assistant on your Mac", "Ask about anything on your screen, get emails and tasks done, talk instead of typing and record in a click. Free, private and open source, for Mac.", HOME)
     page("get-started.html", "Get started · Bubble", "Install Bubble, set up permissions, connect your AI and learn the shortcuts.",
          head("Get started", "Set up Bubble in two minutes", "Install it, say hello, and Bubble walks you through the rest. Everything after installing is optional.") + STARTED)
     page("faq.html", "FAQ · Bubble", "Answers to common questions about Bubble.", FAQ)
