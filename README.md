@@ -58,6 +58,8 @@ Everything stays on your Mac unless you use a feature that needs the internet:
 | An answer shows a picture, molecule or video | The search words or compound name | Wikimedia Commons, PubChem or YouTube |
 | You download the Whisper model | Nothing about you (a plain download) | Hugging Face |
 
+Your chats with Ask Bubble are saved on your Mac (`~/Library/Application Support/Bubble/Chats`, readable only by you; 30 days by default, adjustable in Settings) so it picks up where you left off; screenshots are never saved. Once a day, if "Check for updates" is on, Bubble reads one small public file from its website to see if there's a newer version.
+
 Audio is never uploaded: speech recognition, Whisper and captions all run on your Mac. Your API key lives in the macOS Keychain. Snippets (`~/Library/Application Support/Bubble/snippets.json`) and the latest Ask Bubble screenshot are readable only by your user account. Recordings, transcripts, settings and the log (`~/Library/Logs/Bubble.log`) stay on your Mac.
 
 When you use Listen on a call, other people's voices are transcribed too. Tell them, as you would if you were recording.
@@ -108,6 +110,9 @@ Every shortcut can be changed by clicking it in Bubble.
 | `Sources/Dictation.swift`, `Sources/Cleaner.swift`, `Sources/Snippets.swift` | Dictation, clean-up rules, AI polish, snippets |
 | `Sources/Assistant.swift`, `Sources/ClaudeCode.swift`, `Sources/BubbleTools.swift` | Ask Bubble: the panel, live listening, the Claude Code session and its safety rules, and Bubble's local tools |
 | `Sources/Shortcuts.swift` | Global shortcuts you can change by clicking them |
+| `Sources/Chats.swift` | Saved Ask Bubble chats, history and how long they're kept |
+| `Sources/Onboarding.swift` | The welcome chat: permissions, connecting your AI, Bubble's promises |
+| `Sources/Updates.swift` | The daily update check |
 | `Sources/Namer.swift` | Automatic titles |
 
 For testing: `Bubble --selftest 6 [screen|area|window|chrome] [pause|restart]` records without the countdown and then quits. `--pickertest`, `--countdowntest`, `--edit <file>`, `--assisttest [question]` and `--dicttest` open those parts directly.

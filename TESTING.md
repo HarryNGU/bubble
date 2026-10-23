@@ -13,9 +13,9 @@ This is an early build. Things will break, and that's what you're here to find.
 
 ## Install
 
-1. Open `Bubble-1.2.0.dmg` and drag Bubble into Applications.
-2. Optional: check the file is the one that was sent. In Terminal run `shasum -a 256 Bubble-1.2.0.dmg`; it should print
-   `86fc32542f4aedefa4e0e2854858799ce5bca01c470b59692e7b9bb685c0518b`.
+1. Open `Bubble-1.3.0.dmg` and drag Bubble into Applications.
+2. Optional: check the file is the one that was sent. In Terminal run `shasum -a 256 Bubble-1.3.0.dmg`; it should print
+   `8686910bf38f0597d150b789d9120f3289e52fd04f90ca7bb960815977171c24`.
 3. Open Bubble. Because this beta isn't notarised by Apple yet, macOS will refuse the first time. Open **System Settings → Privacy & Security**, scroll down to the message about Bubble, click **Open Anyway** and confirm. You only do this once per version.
 4. Bubble introduces itself in a short chat and asks for each permission as it goes. After you allow Screen Recording, macOS may ask you to quit and reopen it; it picks up where you left off.
 
@@ -38,6 +38,17 @@ Tick these off and note anything odd, slow, confusing or ugly.
 - [ ] Click Bubble's picture to change its face and nickname; react to a message (hover it, or right-click).
 - [ ] Move the panel with ⌥ + arrow keys. Try it over a full-screen app.
 - [ ] Settings → Assistant → "What Bubble knows about you": paste what ChatGPT knows about you, then ask Bubble something personal.
+
+**Chats remember**
+- [ ] Ask Bubble something, quit Bubble (⌘Q), open it again and show the panel. Your chat should still be there.
+- [ ] Start a new chat (⌘N in the panel, or the pencil button), then reopen the old one from the clock button.
+- [ ] Settings → Assistant → Chat history: try "Don't keep" and "Delete all chats".
+
+**Feels like a Mac app**
+- [ ] Go through the menu bar: Bubble, File, Edit, View, Window and Help. Does everything do what it says?
+- [ ] ⌘, opens Settings; ⌘1 to ⌘6 switch pages; About Bubble shows the version.
+- [ ] Settings → General: turn on "Open Bubble when you log in", restart your Mac, and check it starts quietly in the menu bar.
+- [ ] The Dock icon should appear only while Bubble's window is open.
 
 **Dictation**
 - [ ] Double-tap ⌥ in Notes, Messages, a browser text box and Slack. Talk, then pause. Did it type the right thing, in the right place?

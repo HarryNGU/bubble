@@ -1,6 +1,7 @@
 // Shared bits: settings, logging, small UI helpers, coordinate conversion.
 
 import AppKit
+import ServiceManagement
 
 enum CameraBackground: String, CaseIterable {
     case off, blur, grey, clear
@@ -121,4 +122,19 @@ extension NSScreen {
 func appKitRect(fromGlobalTopLeft r: CGRect) -> NSRect {
     let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
     return NSRect(x: r.minX, y: primaryHeight - r.maxY, width: r.width, height: r.height)
+}
+
+/// Opening Bubble when you log in, so its shortcuts are always ready.
+enum LoginItem {
+    static var isOn: Bool { SMAppService.mainApp.status == .enabled }
+    /// Needs your OK in System Settings → General → Login Items the first time.
+    static var needsApproval: Bool { SMAppService.mainApp.status == .requiresApproval }
+    static func set(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            log("login item: \(on ? "on" : "off")")
+        } catch {
+            log("login item failed: \(error.localizedDescription)")
+        }
+    }
 }

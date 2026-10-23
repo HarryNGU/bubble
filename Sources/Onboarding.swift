@@ -53,6 +53,8 @@ struct OnboardingView: View {
     @State private var alreadyAllowed = false
     @State private var downloading: Double?
     @FocusState private var nameFocused: Bool
+    @State private var atLogin = LoginItem.isOn
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -405,6 +407,16 @@ struct OnboardingView: View {
                 Label("Ask Bubble stays off for now. You can turn it on any time in Settings.", systemImage: "info.circle")
                     .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.55))
             }
+            Toggle(isOn: $atLogin) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open Bubble when I log in").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    Text("My shortcuts only work while I'm running, so this keeps me ready. You can change it in Settings.")
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.55)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch).tint(Theme.accent)
+            .onChange(of: atLogin) { LoginItem.set(atLogin) }
+            .padding(14).background(glass(16))
             if (dictate || record) && !Whisper.hasModel { whisperCard }
             HStack {
                 Spacer()
@@ -521,7 +533,7 @@ struct OnboardingView: View {
         showKeyField = false
         alreadyAllowed = asks.allSatisfy(\.granted)
         if scene == .brain && brainState == .checking && animated { checkBrain(replay: true); revealed = 0; return }
-        guard animated else { revealed = lines.count; typing = false; return }
+        guard animated && !reduceMotion else { revealed = lines.count; typing = false; return }
         revealed = 0
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)

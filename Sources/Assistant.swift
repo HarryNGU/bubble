@@ -15,14 +15,23 @@ import WebKit
 
 // MARK: - When Bubble hides its Dock icon
 
-/// macOS only shows a regular (Dock) app's windows on that app's own desktops. While the pill
-/// follows you or the assistant is open, Bubble runs as a menu-bar app so its panels can appear
-/// over other apps' full-screen spaces too.
+/// Bubble lives in the menu bar. Its Dock icon shows only while its main window is open, like
+/// other menu-bar helpers. (macOS only shows a Dock app's windows on that app's own desktops, so
+/// while the pill follows you or the assistant is open, Bubble stays a menu-bar app so its panels
+/// can appear over other apps' full-screen spaces too.)
 enum AppPresence {
     private static var reasons = Set<String>()
+    private static var windowOpen = false
     static func need(_ reason: String, _ on: Bool) {
         if on { reasons.insert(reason) } else { reasons.remove(reason) }
-        let want: NSApplication.ActivationPolicy = reasons.isEmpty ? .regular : .accessory
+        apply()
+    }
+    static func mainWindow(_ open: Bool) {
+        windowOpen = open
+        apply()
+    }
+    private static func apply() {
+        let want: NSApplication.ActivationPolicy = windowOpen && reasons.isEmpty ? .regular : .accessory
         if NSApp.activationPolicy() != want { NSApp.setActivationPolicy(want) }
     }
 }
@@ -441,6 +450,7 @@ final class AssistantModel: ObservableObject {
         /// Your reactions to Bubble's messages in this reply, by message number.
         var reactions: [Int: [String]] = [:]
         var reactionsTold = false
+        var at = Date()
     }
 
     @Published var exchanges: [Exchange] = []
@@ -456,6 +466,10 @@ final class AssistantModel: ObservableObject {
     @Published var focusRequest = 0
     @Published var approval: ClaudeCodeSession.Approval?
     @Published var talking = false
+    /// The chat on screen, saved to disk as it goes.
+    @Published private(set) var chat = ChatRecord()
+    /// Your previous chat, offered as "Continue" after Bubble started a fresh one.
+    @Published var resumable: ChatRecord?
     private var speech: SpeechSession?
     private var silence: Timer?
 
@@ -476,6 +490,67 @@ final class AssistantModel: ObservableObject {
             if self.listening && !self.listener.isRunning { self.listening = false }
         }
         session.onEvent = { [weak self] e in self?.handle(e) }
+        ChatStore.prune()
+        if let last = ChatStore.all().first { load(last) } else { session.switchTo(nil) }
+    }
+
+    // MARK: Chats
+
+    private func load(_ c: ChatRecord) {
+        chat = c
+        exchanges = c.turns.map {
+            Exchange(question: $0.question, answer: $0.answer, withScreen: $0.withScreen, activity: nil,
+                     reactions: $0.reactions, reactionsTold: true, at: $0.at)
+        }
+        session.switchTo(c.claudeSession)
+    }
+
+    /// Saves the chat on screen (only finished answers).
+    func persist() {
+        let turns = exchanges.filter { !$0.answer.isEmpty }.map {
+            ChatRecord.Turn(question: $0.question, answer: $0.answer, withScreen: $0.withScreen, at: $0.at, reactions: $0.reactions)
+        }
+        guard !turns.isEmpty else { return }
+        chat.turns = turns
+        chat.updated = Date()
+        chat.claudeSession = session.conversationID
+        ChatStore.save(chat)
+    }
+
+    func newChat() {
+        stopAnswer()
+        persist()
+        chat = ChatRecord()
+        exchanges = []
+        error = nil
+        resumable = nil
+        session.switchTo(nil)
+        focusRequest += 1
+    }
+
+    func open(_ c: ChatRecord) {
+        stopAnswer()
+        persist()
+        resumable = nil
+        error = nil
+        load(c)
+        focusRequest += 1
+    }
+
+    func deleteChat(_ c: ChatRecord) {
+        ChatStore.delete(c.id)
+        if c.id == chat.id { chat = ChatRecord(); exchanges = []; session.switchTo(nil) }
+        if resumable?.id == c.id { resumable = nil }
+    }
+
+    /// Coming back after a long break starts a fresh chat, with the last one a tap away.
+    func freshenIfStale() {
+        guard !exchanges.isEmpty, !thinking, approval == nil,
+              Date().timeIntervalSince(chat.updated) > ChatStore.freshAfter else { return }
+        persist()
+        let old = chat
+        newChat()
+        resumable = old
     }
 
     /// Opening the panel starts Claude Code in the background, so the first answer is quicker.
@@ -535,6 +610,7 @@ final class AssistantModel: ObservableObject {
                 if index < self.exchanges.count, self.exchanges[index].answer.isEmpty { self.exchanges.remove(at: index) }
             }
             self.thinking = false
+            self.persist()
         }
     }
 
@@ -561,6 +637,7 @@ final class AssistantModel: ObservableObject {
         if let k = r.firstIndex(of: emoji) { r.remove(at: k) } else { r.append(emoji) }
         exchanges[i].reactions[part] = r
         exchanges[i].reactionsTold = false
+        persist()
     }
 
     private func handle(_ e: ClaudeCodeSession.Event) {
@@ -584,6 +661,7 @@ final class AssistantModel: ObservableObject {
                 error = err
                 if exchanges[i].answer.isEmpty { exchanges.remove(at: i) }
             }
+            persist()
         }
     }
 
@@ -680,11 +758,10 @@ final class AssistantModel: ObservableObject {
         thinking = false
     }
 
+    /// Starts a new chat; the current one stays in your history.
     func clear() {
-        stopAnswer()
-        exchanges = []
+        newChat()
         listener.clear()
-        session.reset()
     }
 }
 
@@ -720,6 +797,7 @@ final class AssistantController: NSObject, NSWindowDelegate {
         guard Self.consent() else { return }
         let p = panel ?? makePanel()
         panel = p
+        if !p.isVisible { model.freshenIfStale() }
         AppPresence.need("assistant", true)
         model.cardOpen = true
         if !p.isVisible {
@@ -882,6 +960,7 @@ struct AssistantView: View {
     @State private var showTranscript = false
     @State private var showLook = false
     @State private var showBuddy = false
+    @State private var showHistory = false
     @State private var listenInfo = false
     @State private var listenHover: DispatchWorkItem?
 
@@ -934,11 +1013,13 @@ struct AssistantView: View {
                     .foregroundStyle(.white.opacity(model.seeScreen ? 0.9 : 0.45)).frame(width: 28, height: 28)
             }
             .buttonStyle(.plain).help(model.seeScreen ? "Sees your screen when you ask" : "Not looking at your screen")
+            .accessibilityLabel(model.seeScreen ? "Screen sharing on: Bubble sees your screen when you ask" : "Screen sharing off")
             Menu {
-                Button("Clear conversation") { model.clear() }
+                Button("New Chat") { model.newChat() }
+                Button("Delete This Chat", role: .destructive) { model.deleteChat(model.chat) }.disabled(model.exchanges.isEmpty)
                 Divider()
                 Text("Move: \(Settings.assistantMove.label) + arrow keys")
-            } label: { Image(systemName: "ellipsis").foregroundStyle(.white.opacity(0.8)).frame(width: 26, height: 28) }
+            } label: { Image(systemName: "ellipsis").foregroundStyle(.white.opacity(0.8)).frame(width: 26, height: 28).accessibilityLabel("More") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .padding(.trailing, 8)
         }
@@ -1012,6 +1093,66 @@ struct AssistantView: View {
         }
         .padding(16)
         .frame(width: 270)
+    }
+
+    private func headerButton(_ icon: String, label: String, lit: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(.white.opacity(0.85))
+                .frame(width: 28, height: 28).background(Circle().fill(.white.opacity(lit ? 0.18 : 0.08)))
+        }
+        .buttonStyle(.plain).help(label).accessibilityLabel(label)
+    }
+
+    /// Your saved chats, newest first. Click one to carry on with it.
+    private var historyList: some View {
+        let chats = ChatStore.all()
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Chats").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button("New chat") { showHistory = false; model.newChat() }.buttonStyle(.link).font(.system(size: 12))
+            }
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
+            if chats.isEmpty {
+                Text(Settings.chatKeepDays == 0 ? "Chats aren't being kept. You can change that in Settings → Assistant." : "Your chats will appear here.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.bottom, 14)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(chats.prefix(40)) { c in
+                            Button { showHistory = false; model.open(c) } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.title).font(.system(size: 12.5, weight: c.id == model.chat.id ? .semibold : .regular)).lineLimit(1)
+                                    Text(c.updated.formatted(.relative(presentation: .named)) + " · \(c.turns.count) message\(c.turns.count == 1 ? "" : "s")")
+                                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10).padding(.vertical, 7)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(c.id == model.chat.id ? Color.accentColor.opacity(0.15) : .clear))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { Button("Delete Chat", role: .destructive) { model.deleteChat(c) } }
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                }
+                .frame(maxHeight: 320)
+            }
+            Divider()
+            Text(keepLabel).font(.system(size: 11)).foregroundStyle(.secondary).padding(12)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: 300)
+    }
+
+    private var keepLabel: String {
+        switch Settings.chatKeepDays {
+        case 0: return "Chats aren't kept after you close them."
+        case -1: return "Chats stay on this Mac until you delete them."
+        default: return "Chats stay on this Mac for \(Settings.chatKeepDays) days. Right-click one to delete it."
+        }
     }
 
     /// What Listen is for, shown when you hover over it.
@@ -1090,11 +1231,16 @@ struct AssistantView: View {
                 }
             }
             Spacer()
+            headerButton("clock.arrow.circlepath", label: "Chat history", lit: showHistory) { showHistory.toggle() }
+                .popover(isPresented: $showHistory, arrowEdge: .bottom) { historyList }
+            headerButton("square.and.pencil", label: "New chat (⌘N)", lit: false) { model.newChat() }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(model.exchanges.isEmpty)
             Button { showLook.toggle() } label: {
                 Image(systemName: "paintpalette").font(.system(size: 13)).foregroundStyle(.white.opacity(0.85))
                     .frame(width: 28, height: 28).background(Circle().fill(.white.opacity(showLook ? 0.18 : 0.08)))
             }
-            .buttonStyle(.plain).help("Change the chat's look")
+            .buttonStyle(.plain).help("Change the chat's look").accessibilityLabel("Change the chat's look")
             .popover(isPresented: $showLook, arrowEdge: .bottom) { lookPicker }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -1123,6 +1269,24 @@ struct AssistantView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .onChange(of: model.exchanges.last?.answer) { proxy.scrollTo("end", anchor: .bottom) }
                 }
+            }
+            if model.exchanges.isEmpty, let old = model.resumable {
+                Button { model.open(old) } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .semibold))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Continue your last chat").font(.system(size: 12, weight: .semibold))
+                            Text(old.title).font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                        }
+                        Spacer()
+                        Text(old.updated.formatted(.relative(presentation: .named))).font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.08)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12).padding(.top, 12)
             }
             if model.exchanges.isEmpty { chipRow }
             inputBar
@@ -1291,13 +1455,13 @@ struct AssistantView: View {
                     Image(systemName: "stop.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.black)
                         .frame(width: 26, height: 26).background(Circle().fill(.white))
                 }
-                .buttonStyle(.plain).help("Stop")
+                .buttonStyle(.plain).help("Stop").accessibilityLabel("Stop answering")
             } else {
                 Button { model.ask() } label: {
                     Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold)).foregroundStyle(.black)
                         .frame(width: 26, height: 26).background(Circle().fill(.white))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).help("Send").accessibilityLabel("Send")
                 .disabled(model.input.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
@@ -1678,7 +1842,7 @@ struct ChatRow<Content: View>: View {
                     Image(systemName: "face.smiling").font(.system(size: 13)).foregroundStyle(.white.opacity(0.75))
                         .frame(width: 24, height: 24).background(Circle().fill(.white.opacity(0.12)))
                 }
-                .buttonStyle(.plain).help("React")
+                .buttonStyle(.plain).help("React").accessibilityLabel("React to this message")
                 .opacity(hover || picking ? 1 : 0)
                 .popover(isPresented: $picking, arrowEdge: .top) {
                     HStack(spacing: 4) {

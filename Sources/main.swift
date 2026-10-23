@@ -39,14 +39,14 @@ func listWindows() -> [WindowChoice] {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private let bubble = CameraBubble()
     private let recorder = Recorder()
     private let dictation = DictationController()
     private lazy var assistant = AssistantController()
     private var controls: ControlBar!
-    private var recording = false
+    private var recording = false { didSet { if oldValue != recording { buildMainMenu() } } }
     private var busy = false
     private var titleTimer: Timer?
     private var lastHeard = Date()
@@ -66,6 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         let args = CommandLine.arguments
+        // Only one Bubble at a time: a second copy hands over to the first and quits.
+        // (Test runs pass "--" options and are allowed alongside.)
+        if !args.contains(where: { $0.hasPrefix("--") }),
+           let other = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .first(where: { $0 != NSRunningApplication.current }), let url = other.bundleURL {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            log("another Bubble is already running; handing over")
+            NSApp.terminate(nil)
+            return
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.autosaveName = "BubbleStatusItem"
         setIcon()
@@ -103,9 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.assistant.model.toggleTalk()
             }
         }
-        keys.onChange = { [weak self] in self?.dictation.applyShortcut(); self?.assistant.refreshKeys() }
+        keys.onChange = { [weak self] in self?.dictation.applyShortcut(); self?.assistant.refreshKeys(); self?.buildMainMenu() }
         keys.install()
         BubbleToolServer.shared.start()
+        if !args.contains(where: { $0.hasPrefix("--") }) {
+            Updates.checkIfDue { [weak self] in self?.buildMainMenu() }
+        }
         dictation.ownTextTarget = { [weak self] text in self?.assistant.takeDictation(text) ?? false }
         dictation.start()
         // Load Whisper now, so the first dictation is as accurate as the rest.
@@ -144,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             selftestSeconds = secs
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.start() }
         } else {
-            showLauncher()
+            if !launchedAtLogin || !Settings.onboarded { showLauncher() } else { log("started at login") }
             // Testing: `--dicttest` dictates for 8 seconds (say something), then delivers.
             if args.contains("--dicttest") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.dictation.toggle() }
@@ -172,33 +185,163 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Launcher window
 
+    /// The standard Mac menu bar: Bubble, File, Edit, View, Window and Help. Items for Bubble's own
+    /// shortcuts show the keys you chose, and the menus are rebuilt when you change them.
     private func buildMainMenu() {
         let main = NSMenu()
-        let appItem = NSMenuItem()
-        main.addItem(appItem)
-        let appMenu = NSMenu()
-        appMenu.addItem(item("Start / Finish Recording…", #selector(toggleClicked)))
-        appMenu.addItem(item("Record Custom Area…", #selector(pickAreaAndRecord)))
-        appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "Hide Bubble", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
-        appMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
-        appMenu.addItem(item("Quit Bubble", #selector(quit), key: "q"))
-        appItem.submenu = appMenu
-        // ⌘C / ⌘V / ⌘A in text fields come from the Edit menu, so it has to exist.
-        let editItem = NSMenuItem()
-        main.addItem(editItem)
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        edit.addItem(redo)
-        edit.addItem(.separator())
-        edit.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        edit.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        edit.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        edit.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
-        editItem.submenu = edit
+        func menu(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
+            let m = NSMenu(title: title)
+            items.forEach(m.addItem)
+            let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            holder.submenu = m
+            main.addItem(holder)
+            return m
+        }
+        func std(_ title: String, _ action: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
+            let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            i.keyEquivalentModifierMask = mods
+            return i
+        }
+        func mine(_ title: String, _ sel: Selector, shortcut: ShortcutAction? = nil, key: String = "", mods: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
+            let i = item(title, sel, key: key, mods: mods)
+            if let a = shortcut, let (k, m) = Self.keyEquivalent(ShortcutCenter.shared[a]) { i.keyEquivalent = k; i.keyEquivalentModifierMask = m }
+            return i
+        }
+
+        // Bubble
+        let update = Updates.available.map { mine("Update to Bubble \($0.version)…", #selector(openUpdate)) }
+        let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        services.submenu = NSMenu(title: "Services")
+        NSApp.servicesMenu = services.submenu
+        _ = menu("Bubble", [
+            mine("About Bubble", #selector(showAbout)),
+            update ?? mine("Check for Updates…", #selector(checkForUpdates)),
+            .separator(),
+            mine("Settings…", #selector(showSettings), key: ","),
+            .separator(),
+            services,
+            .separator(),
+            std("Hide Bubble", #selector(NSApplication.hide(_:)), "h"),
+            std("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            std("Show All", #selector(NSApplication.unhideAllApplications(_:))),
+            .separator(),
+            mine("Quit Bubble", #selector(quit), key: "q"),
+        ])
+
+        // File
+        _ = menu("File", [
+            mine(recording ? "Finish Recording" : "New Recording…", #selector(toggleClicked), shortcut: .record),
+            mine("Record an Area…", #selector(pickAreaAndRecord), shortcut: .area),
+            mine("Record Entire Screen", #selector(recordScreen)),
+            .separator(),
+            mine("Open Recordings Folder", #selector(openFolder), key: "o", mods: [.command, .shift]),
+            .separator(),
+            std("Close Window", #selector(NSWindow.performClose(_:)), "w"),
+        ])
+
+        // Edit (⌘C / ⌘V / ⌘A in text fields come from here; macOS adds Dictation and Emoji itself)
+        let redo = std("Redo", Selector(("redo:")), "z", [.command, .shift])
+        _ = menu("Edit", [
+            std("Undo", Selector(("undo:")), "z"), redo, .separator(),
+            std("Cut", #selector(NSText.cut(_:)), "x"),
+            std("Copy", #selector(NSText.copy(_:)), "c"),
+            std("Paste", #selector(NSText.paste(_:)), "v"),
+            std("Paste and Match Style", #selector(NSTextView.pasteAsPlainText(_:)), "v", [.command, .option, .shift]),
+            std("Delete", #selector(NSText.delete(_:))),
+            std("Select All", #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
+            mine("Copy Last Dictation", #selector(copyLastDictation)),
+        ])
+
+        // View: the pages of Bubble's window, then the floating helpers.
+        var pages: [NSMenuItem] = []
+        for (n, page) in [Page.home, .recordings, .assistant, .dictation, .snippets, .style].enumerated() {
+            let i = mine(page.title, #selector(showPage(_:)), key: "\(n + 1)")
+            i.representedObject = page.rawValue
+            pages.append(i)
+        }
+        _ = menu("View", pages + [
+            .separator(),
+            mine("Ask Bubble", #selector(assistClicked), shortcut: .assist),
+            mine("Camera Bubble", #selector(toggleCamera)),
+            .separator(),
+            std("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+        ])
+
+        // Window
+        let win = menu("Window", [
+            std("Minimise", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            std("Zoom", #selector(NSWindow.performZoom(_:))),
+            .separator(),
+            mine("Bubble", #selector(showLauncherClicked), key: "0"),
+            .separator(),
+            std("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
+        ])
+        NSApp.windowsMenu = win
+
+        // Help (macOS adds its search field)
+        let help = menu("Help", [
+            mine("Bubble Help", #selector(openHelp), key: "?"),
+            mine("Keyboard Shortcuts", #selector(openShortcutsHelp)),
+            mine("Testing Guide", #selector(openTestingGuide)),
+            .separator(),
+            mine("Report a Problem…", #selector(reportProblem)),
+            mine("Privacy Policy", #selector(openPrivacy)),
+            mine("Bubble on GitHub", #selector(openGitHub)),
+        ])
+        NSApp.helpMenu = help
         NSApp.mainMenu = main
+    }
+
+    /// The menu key for one of Bubble's shortcuts, when it's an ordinary key combination.
+    /// (Bubble's global shortcut fires first, so the menu item is only there to show the keys.)
+    static func keyEquivalent(_ s: Shortcut) -> (String, NSEvent.ModifierFlags)? {
+        guard !s.isDoubleTap else { return nil }
+        var mods: NSEvent.ModifierFlags = []
+        var rest = Substring(s.label)
+        let symbols: [(Character, NSEvent.ModifierFlags)] = [("⌃", .control), ("⌥", .option), ("⇧", .shift), ("⌘", .command)]
+        while let c = rest.first, let m = symbols.first(where: { $0.0 == c }) { mods.insert(m.1); rest = rest.dropFirst() }
+        let key = rest.trimmingCharacters(in: .whitespaces)
+        guard !mods.isEmpty else { return nil }
+        if key == "↩" { return ("\r", mods) }
+        guard key.count == 1 else { return nil }
+        return (key.lowercased(), mods)
+    }
+
+    @objc func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        let credits = NSMutableAttributedString(string: "Your personal assistant, living on your Mac.\nFree and open source. No account, no tracking.\n\n",
+                                                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+        credits.append(NSAttributedString(string: "harryngu.github.io/bubble", attributes: [.link: URL(string: "https://harryngu.github.io/bubble/")!, .font: NSFont.systemFont(ofSize: 11)]))
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: credits.length))
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits, .applicationName: "Bubble"])
+    }
+
+    @objc func showSettings() { showPageNamed(Page.settings.rawValue) }
+    @objc func showPage(_ sender: NSMenuItem) { if let p = sender.representedObject as? String { showPageNamed(p) } }
+    private func showPageNamed(_ p: String) {
+        UserDefaults.standard.set(p, forKey: "page")
+        showLauncher()
+    }
+
+    @objc func checkForUpdates() { Updates.check(manual: true) { [weak self] in self?.buildMainMenu() } }
+    @objc func openUpdate() { if let u = Updates.available { NSWorkspace.shared.open(u.page) } }
+
+    private func web(_ path: String) { NSWorkspace.shared.open(URL(string: "https://harryngu.github.io/bubble/" + path)!) }
+    @objc func openHelp() { web("get-started.html") }
+    @objc func openShortcutsHelp() { web("get-started.html#shortcuts") }
+    @objc func openPrivacy() { web("privacy.html") }
+    @objc func openTestingGuide() { NSWorkspace.shared.open(URL(string: "https://github.com/HarryNGU/bubble/blob/main/TESTING.md")!) }
+    @objc func openGitHub() { NSWorkspace.shared.open(URL(string: "https://github.com/HarryNGU/bubble")!) }
+    @objc func reportProblem() {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let os = ProcessInfo.processInfo.operatingSystemVersionString
+        let body = "What happened:\n\nWhat you expected:\n\nSteps to try it:\n\n---\nBubble \(v), macOS \(os)"
+        var c = URLComponents(string: "https://github.com/HarryNGU/bubble/issues/new")!
+        c.queryItems = [URLQueryItem(name: "body", value: body)]
+        if let u = c.url { NSWorkspace.shared.open(u) }
     }
 
     /// Connects the SwiftUI views to the app's behaviour.
@@ -236,6 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         launcher.collectionBehavior = [.fullScreenPrimary]
         launcher.minSize = NSSize(width: 860, height: 560)
         launcher.contentView = host
+        launcher.delegate = self
         launcher.setFrameAutosaveName("BubbleMainWindow")
         if !launcher.setFrameUsingName("BubbleMainWindow") { launcher.center() }
     }
@@ -244,8 +388,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.screenAllowed = CGPreflightScreenCaptureAccess()
         model.micDevices = MicCapture.devices()
         model.refreshRecents()
+        AppPresence.mainWindow(true)
         NSApp.activate(ignoringOtherApps: true)
         launcher.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === launcher { AppPresence.mainWindow(false) }
+    }
+
+    /// Started by "Open Bubble when you log in": stay quietly in the menu bar.
+    private var launchedAtLogin: Bool {
+        guard let e = NSAppleEventManager.shared().currentAppleEvent, e.eventID == kAEOpenApplication else { return false }
+        return e.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     private func pickArea(then done: @escaping (Bool) -> Void) {
@@ -664,6 +819,6 @@ MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
-    app.setActivationPolicy(.regular)
+    app.setActivationPolicy(.accessory)  // the window shows the Dock icon while it's open
     app.run()
 }

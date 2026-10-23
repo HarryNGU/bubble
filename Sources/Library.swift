@@ -857,6 +857,7 @@ struct AssistantPage: View {
     @State private var choice = Settings.assistantModel
     @State private var hasKey = Keychain.hasKey
     @State private var apiKey = ""
+    @State private var keepDays = Settings.chatKeepDays
     @State private var aboutMe = AboutMe.load()
     @State private var aboutSaved = false
     @ObservedObject private var keys = ShortcutCenter.shared
@@ -966,6 +967,25 @@ struct AssistantPage: View {
                 .environment(\.colorScheme, .dark)
                 .padding(.horizontal, 16).padding(.bottom, 14)
             }
+            SettingsGroup(title: "Chat history", footer: "Chats are saved only on this Mac, readable by your account alone, so Bubble picks up where you left off. Screenshots are never saved. After six hours away, Bubble starts a fresh chat and offers to continue the last one.") {
+                SettingRow(title: "Keep chats") {
+                    SwiftUI.Picker("", selection: $keepDays) {
+                        Text("Forever").tag(-1); Text("30 days").tag(30); Text("7 days").tag(7); Text("Don't keep").tag(0)
+                    }
+                    .labelsHidden().frame(width: 130)
+                    .onChange(of: keepDays) { Settings.chatKeepDays = keepDays; ChatStore.prune() }
+                }
+                SettingRow(title: "Delete all chats", subtitle: "Removes every saved chat from this Mac. Can't be undone.", divider: false) {
+                    SecondaryButton(title: "Delete…") {
+                        let a = NSAlert()
+                        a.messageText = "Delete all your Bubble chats?"
+                        a.informativeText = "They're removed from this Mac and can't be brought back."
+                        a.addButton(withTitle: "Delete All").hasDestructiveAction = true
+                        a.addButton(withTitle: "Cancel")
+                        if a.runModal() == .alertFirstButtonReturn { ChatStore.deleteAll() }
+                    }
+                }
+            }
             SettingsGroup(title: "What Bubble knows about you", footer: "Using ChatGPT or another assistant? Copy the prompt, paste it there, then paste its answer here. It's saved only on this Mac (readable by your account alone) and sent with your questions so Bubble already knows you. With Claude Code, Bubble also uses your Claude memory.") {
                 SettingRow(title: "1. Ask your other assistant", subtitle: "Copies a short prompt to paste into ChatGPT, Gemini or similar.") {
                     SecondaryButton(title: "Copy prompt", icon: "doc.on.doc") { copy(AboutMe.exportPrompt) }
@@ -1010,10 +1030,26 @@ struct SettingsPage: View {
     @ObservedObject var model: UIModel
     @ObservedObject var permissions: Permissions
     @ObservedObject private var themes = ThemeStore.shared
+    @State private var atLogin = LoginItem.isOn
+    @State private var checkUpdates = Settings.checkUpdates
+
+    private var version: String {
+        let i = Bundle.main.infoDictionary
+        return "\(i?["CFBundleShortVersionString"] as? String ?? "?") (\(i?["CFBundleVersion"] as? String ?? "?"))"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             PageHeader(title: "Settings")
+            SettingsGroup(title: "General", footer: LoginItem.needsApproval ? "macOS needs your OK: open System Settings → General → Login Items and turn Bubble on." : "Bubble's shortcuts only work while it's running, so opening it at login keeps them ready. Update checks read one small file from Bubble's website, once a day.") {
+                SwitchRow(title: "Open Bubble when you log in", subtitle: "It starts quietly in the menu bar.", isOn: $atLogin)
+                    .onChange(of: atLogin) { LoginItem.set(atLogin) }
+                SwitchRow(title: "Check for updates automatically", subtitle: "Tells you when a newer Bubble is out. Installing is up to you.", isOn: $checkUpdates)
+                    .onChange(of: checkUpdates) { Settings.checkUpdates = checkUpdates }
+                SettingRow(title: "Version", subtitle: "Bubble \(version)", divider: false) {
+                    SecondaryButton(title: "Check now") { Updates.check(manual: true) {} }
+                }
+            }
             SettingsGroup(title: "Appearance") {
                 SettingRow(title: "Accent colour", subtitle: themes.current.name) {
                     HStack(spacing: 10) {

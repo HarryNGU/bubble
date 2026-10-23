@@ -74,7 +74,9 @@ final class ClaudeCodeSession: @unchecked Sendable {
     Keep all the detail that matters; just split it up. A list or code block can be its own message. Use what \
     you know about the user from memory and their connected apps when it helps, and talk to them warmly by name. \
     Show things when useful: code in fenced blocks, markdown links, YouTube watch links on their own line. No \
-    tables. Only take actions the user asked for; Bubble asks them to approve anything that changes something.
+    tables. Only take actions the user asked for; Bubble asks them to approve anything that changes something. \
+    Earlier Bubble chats with this user are saved as JSON files in ~/Library/Application Support/Bubble/Chats; \
+    if they refer to something you discussed before that isn't in this conversation, look there.
 
     Reactions: like a friend in a chat, you can react to the user's message with an emoji by starting your reply \
     with [react: ❤️] (one or two emoji, for example 😂 at a joke, ❤️ at good news or thanks, 👍 at a plan, 🙏 when \
@@ -152,6 +154,18 @@ final class ClaudeCodeSession: @unchecked Sendable {
 
     /// Stops the background process but keeps the conversation for next time.
     func shutdown() { process?.terminate(); process = nil }
+
+    /// The Claude Code conversation being continued (nil until the first answer of a new chat).
+    var conversationID: String? { sessionID }
+
+    /// Continue a different saved conversation, or a new one with nil. Takes effect on the next question.
+    func switchTo(_ id: String?) {
+        guard id != sessionID || process == nil else { return }
+        process?.terminate()
+        process = nil
+        sessionID = id
+        if let id { Settings.d.set(id, forKey: "assistantSessionID") } else { Settings.d.removeObject(forKey: "assistantSessionID") }
+    }
 
     /// Forget this conversation and start a new one next time.
     func reset() {

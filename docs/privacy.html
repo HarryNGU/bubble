@@ -36,6 +36,7 @@
 <li>Recordings and reels (<code>~/Desktop/Bubble Recordings</code>).</li>
 <li>Voice: dictation, captions and Ask Bubble's listening are transcribed on your Mac. Audio is never uploaded.</li>
 <li>The name you asked Bubble to call you, if you gave one. It is only shown to you.</li>
+<li>Your chats with Bubble (in <code>~/Library/Application Support/Bubble/Chats</code>, readable only by your user account), so it picks up where you left off. Screenshots are never saved. They're kept for 30 days unless you choose otherwise in Settings, and you can delete any chat, or all of them, at any time.</li>
 <li>What you brought over from another assistant about yourself, if you did (in <code>~/Library/Application Support/Bubble/about-me.md</code>, readable only by your user account). You can delete it in Bubble's settings.</li>
 <li>Settings, snippets, transcripts of your recordings, and Ask Bubble's latest screenshot (in <code>~/Library/Application Support/Bubble</code>, readable only by your user account).</li>
 <li>Your Anthropic API key, if you add one, in the macOS Keychain.</li>
@@ -51,6 +52,7 @@
 <tr><td>Use AI polish for dictation, or the reel editor chat</td><td>The text of your dictation, or the video's transcript and edit settings. Never audio or video.</td><td>Anthropic, with your API key</td></tr>
 <tr><td>See a picture, molecule or video in an answer</td><td>The search words or compound name</td><td>Wikimedia Commons, PubChem or YouTube (the video player)</td></tr>
 <tr><td>Download the Whisper speech model</td><td>A normal download request</td><td>Hugging Face</td></tr>
+<tr><td>Bubble checks for updates (once a day, if that's on)</td><td>A normal request for one small public file. Nothing about you is included.</td><td>GitHub Pages (this website)</td></tr>
 </table>
 <p>Those services handle the information under their own privacy policies, including <a href="https://www.anthropic.com/legal/privacy">Anthropic's</a>. Bubble doesn't sell or share your information with anyone else, ever.</p>
 
