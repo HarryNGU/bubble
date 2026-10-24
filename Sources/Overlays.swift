@@ -22,6 +22,7 @@ final class ControlBar {
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.sharingType = .none  // never in a recording, a screen share or a screenshot
         host.frame = NSRect(origin: .zero, size: size)
         panel.contentView = host
         model.onDragPill = { [weak self] ended in self?.drag(ended: ended) }
@@ -29,23 +30,17 @@ final class ControlBar {
 
     private var follow: Timer?
 
-    /// `follow`: recording the whole screen, so the pill goes wherever you go (other desktops,
-    /// full-screen apps, other displays). Otherwise it stays with the tab, window or area.
-    func show(on screen: NSScreen, follow following: Bool) {
+    /// The pill goes wherever you go while recording (other apps, other desktops, full-screen
+    /// apps and other displays), so stop and pause are always at hand. It's never recorded.
+    func show(on screen: NSScreen) {
         let f = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 14))
         follow?.invalidate()
-        follow = nil
-        if following {
-            // macOS only shows a regular (Dock) app's windows on its own desktops. As a menu-bar-only
-            // app, Bubble's pill can follow you onto other desktops and other apps' full-screen spaces.
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            AppPresence.need("pill", true)
-            follow = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in self?.followMouse() }
-        } else {
-            // Stays on the desktop (or full-screen space) where the recording is.
-            panel.collectionBehavior = [.fullScreenAuxiliary, .stationary]
-        }
+        // macOS only shows a regular (Dock) app's windows on its own desktops. As a menu-bar-only
+        // app, Bubble's pill can follow you onto other desktops and other apps' full-screen spaces.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        AppPresence.need("pill", true)
+        follow = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in self?.followMouse() }
         panel.orderFrontRegardless()
     }
 

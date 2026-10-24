@@ -61,13 +61,29 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
     /// The region being recorded in AppKit screen coordinates (used to place the camera bubble).
     private(set) var recordedRect: NSRect?
 
+    /// A window or tab recording takes only that window (plus the camera bubble), so Bubble's own
+    /// panels have to be added to it by name when you've chosen to show them.
+    private var windowTarget: (window: SCWindow, display: SCDisplay, extras: [SCWindow])?
+    /// Blurs passwords, emails, card numbers and the like as they're recorded (Settings → Recording).
+    private var redactor: Redactor?
+    private var overlays: [Int] = []
+
     func start(source: CaptureSource, excluding: [Int], bubble: [Int], mic useMic: Bool,
                noiseSuppression: Bool, systemAudio: Bool) async throws {
+        windowTarget = nil
+        overlays = []
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let windowsByNumber = { (ns: [Int]) in content.windows.filter { ns.contains(Int($0.windowID)) } }
         let excluded = windowsByNumber(excluding)
         let bubbleWindows = windowsByNumber(bubble)
 
+        // With private details blurred, password managers aren't recorded at all. (Bubble's own pill is
+        // already invisible to every capture, so excluding whole apps loses nothing.)
+        let hiddenApps = Settings.blurPrivate ? content.applications.filter { Redactor.passwordApps.contains($0.bundleIdentifier) } : []
+        func screenFilter(_ d: SCDisplay) -> SCContentFilter {
+            hiddenApps.isEmpty ? SCContentFilter(display: d, excludingWindows: excluded)
+                               : SCContentFilter(display: d, excludingApplications: hiddenApps, exceptingWindows: [])
+        }
         func display(id: CGDirectDisplayID) -> SCDisplay? { content.displays.first { $0.displayID == id } }
         func display(containing r: CGRect) -> SCDisplay? {
             content.displays.max { a, b in
@@ -86,12 +102,12 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             if case .display(let d) = source { id = d }
             guard let d = display(id: id) ?? content.displays.first else { throw RecordError(message: "No display found.") }
             scDisplay = d
-            filter = SCContentFilter(display: d, excludingWindows: excluded)
+            filter = screenFilter(d)
 
         case .area(let id, let rect):
             guard let d = display(id: id) else { throw RecordError(message: "That display is no longer connected.") }
             scDisplay = d
-            filter = SCContentFilter(display: d, excludingWindows: excluded)
+            filter = screenFilter(d)
             crop = rect
 
         case .window(let wid, _), .croppedWindow(let wid, _, _):
@@ -102,6 +118,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             scDisplay = d
             // Record only that window (plus the camera bubble), cropped to the window's frame.
             filter = SCContentFilter(display: d, including: [w] + bubbleWindows)
+            windowTarget = (w, d, bubbleWindows)
             var frame = w.frame
             if case .croppedWindow(_, let inset, _) = source, inset < frame.height - 50 {
                 frame.origin.y += inset
@@ -194,6 +211,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             self.sessionStarted = false
             self.lastVideo = nil
             self.lastTime = .invalid
+            self.micNext = .invalid
+            self.redactor = Settings.blurPrivate ? Redactor() : nil
         }
         self.url = url
 
@@ -206,6 +225,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
                 try await mic.start(noiseSuppression: false)
             }
         }
+        if let r = queue.sync(execute: { redactor }) { await Task.detached { r.warmUp() }.value }
         let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         if systemAudio { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue) }
@@ -215,7 +235,36 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         log("recording \(source.label) at \(width)×\(height), \(bitrate / 1000) kbps → \(url.lastPathComponent)")
     }
 
+    private var micRestarting = false
+
+    /// Adds Bubble's own panels (Ask Bubble) to a window or tab recording, or takes them out again.
+    /// Screen, area and app recordings follow each window's own sharing setting instead.
+    @MainActor func setOverlays(_ numbers: [Int]) {
+        guard let stream, let t = windowTarget, numbers != overlays else { return }
+        overlays = numbers
+        Task {
+            let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let extra = content?.windows.filter { numbers.contains(Int($0.windowID)) } ?? []
+            do { try await stream.updateContentFilter(SCContentFilter(display: t.display, including: [t.window] + t.extras + extra)) }
+            catch { log("couldn't update what's recorded: \(error)") }
+        }
+    }
+
+    /// Brings the mic back if it stopped delivering sound mid-recording. Called a few times a second.
+    @MainActor func reviveMicIfNeeded() {
+        guard stream != nil, !micRestarting, mic.isStalled(after: 2) else { return }
+        micRestarting = true
+        log("mic: no sound for 2 s, starting it again")
+        Task { @MainActor in
+            do { try await mic.restart() } catch { log("mic restart failed: \(error)") }
+            micRestarting = false
+        }
+    }
+
+    func stallMicForTesting() { mic.stallForTesting() }
+
     func stop(discarding: Bool) async {
+        if let r = queue.sync(execute: { redactor }) { log("blur: \(r.spotted) private detail\(r.spotted == 1 ? "" : "s") blurred") }
         mic.stop()
         if let stream { try? await stream.stopCapture() }
         stream = nil
@@ -271,12 +320,28 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
         let sb = shifted(raw)
         let pts = CMSampleBufferGetPresentationTimeStamp(sb)
         guard let start = startTime, pts >= start else { return }
+        if input === micIn {
+            // If the mic was off for a moment (the Mac began to sleep, say), fill the gap with silence
+            // so your voice stays in time with the picture.
+            if micNext.isValid, (pts - micNext).seconds > 0.1 {
+                log("mic: filling \(String(format: "%.1f", (pts - micNext).seconds)) s gap with silence")
+                var t = micNext
+                while (pts - t).seconds > 0.01 {
+                    let chunk = min(1, (pts - t).seconds)
+                    guard input.isReadyForMoreMediaData, let gap = MicCapture.silence(at: t, seconds: chunk) else { break }
+                    input.append(gap)
+                    t = t + CMTime(seconds: chunk, preferredTimescale: CMTimeScale(MicCapture.sampleRate))
+                }
+            }
+            micNext = pts + CMTime(value: CMTimeValue(CMSampleBufferGetNumSamples(sb)), timescale: CMTimeScale(MicCapture.sampleRate))
+        }
         input.append(sb)
         let end = CMTimeAdd(pts, CMSampleBufferGetDuration(sb))
         if !lastTime.isValid || end > lastTime { lastTime = end }
     }
 
     private var startTime: CMTime?
+    private var micNext = CMTime.invalid  // where the next mic sound should start (writer queue)
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
         guard sb.isValid, let writer, writer.status == .writing else { return }
@@ -292,7 +357,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate {
             }
             if paused { return }
             if let videoIn, videoIn.isReadyForMoreMediaData {
-                let sb = shifted(sb)
+                let sb = shifted(redactor?.process(sb) ?? sb)
                 videoIn.append(sb)
                 lastVideo = sb
                 let pts = CMSampleBufferGetPresentationTimeStamp(sb)

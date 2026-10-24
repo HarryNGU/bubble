@@ -13,9 +13,9 @@ This is an early build. Things will break, and that's what you're here to find.
 
 ## Install
 
-1. Open `Bubble-1.3.1.dmg` and drag Bubble into Applications.
-2. Optional: check the file is the one that was sent. In Terminal run `shasum -a 256 Bubble-1.3.1.dmg`; it should print
-   `589c5f1e3bed6f473e9d18bd5466abbd99f3efa4e638f12c61714acd24b0e26a`.
+1. Open `Bubble-1.3.2.dmg` and drag Bubble into Applications.
+2. Optional: check the file is the one that was sent. In Terminal run `shasum -a 256 Bubble-1.3.2.dmg`; it should print
+   `5d1b835ca5611ba68a27edb2060cf311b87aacee167f1c19f077cadc5f22e4bb`.
 3. Open Bubble. Because this beta isn't notarised by Apple yet, macOS will refuse the first time. Open **System Settings → Privacy & Security**, scroll down to the message about Bubble, click **Open Anyway** and confirm. You only do this once per version.
 4. Bubble introduces itself in a short chat and asks for each permission as it goes. After you allow Screen Recording, macOS may ask you to quit and reopen it; it picks up where you left off.
 
@@ -37,6 +37,10 @@ Tick these off and note anything odd, slow, confusing or ugly.
 - [ ] Talk to it with ⌥⇧\ and stop speaking. Does it finish on its own?
 - [ ] Turn on **Listen** while a YouTube video plays. Does the transcript follow the video, and ignore your own voice?
 - [ ] Click Bubble's picture to change its face and nickname; react to a message (hover it, or right-click).
+- [ ] Share your screen in Zoom or Meet, or record with Bubble, and open the panel. Turn **Visibility** off on the bar, then on again. It should disappear from (and come back to) the share and the recording, while you can still see it.
+- [ ] Hover over Listen, Visibility and the eye: each should explain itself in a card that's easy to read.
+- [ ] Type a message with Shift+Return for a new line. Scroll to the top of a long chat and use **Jump to present**.
+- [ ] Select text in the chat and the typing box with your mouse: the panel should stay put. Drag the bar on top to move it.
 - [ ] Move the panel with ⌥ + arrow keys. Try it over a full-screen app.
 - [ ] Settings → Assistant → "What Bubble knows about you": paste what ChatGPT knows about you, then ask Bubble something personal.
 
@@ -57,6 +61,8 @@ Tick these off and note anything odd, slow, confusing or ugly.
 
 **Recording**
 - [ ] Record a window, a Chrome tab, an area and the whole screen. Try pause, restart and discard.
+- [ ] While recording, switch to other apps and desktops. The pill should come with you, and never show in the video.
+- [ ] Record a page showing an email address, a phone number or an API key (made-up ones are fine). They should be blurred in the video, from the very first frame. Tell me about anything private it missed, or anything it blurred that it shouldn't have.
 - [ ] On a recording in the library, click **Make reels**. Are the captions accurate and in time?
 
 **Things that should never happen** (tell me straight away if they do)

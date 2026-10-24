@@ -295,6 +295,14 @@ enum ScreenGrab {
 
 // MARK: - Claude
 
+extension Settings {
+    /// Whether the Ask Bubble panel appears in recordings and screen shares: Bubble's own recordings and
+    /// Zoom, Meet, Teams and the rest alike. On by default: Bubble is visible on purpose, and you can
+    /// hide it when your chat is private.
+    static let showInCapturesKey = "assistantInCaptures"
+    static var showInCaptures: Bool { get { d.object(forKey: showInCapturesKey) as? Bool ?? true } set { d.set(newValue, forKey: showInCapturesKey) } }
+}
+
 /// How Claude asks Bubble to show pictures (shared by both brains).
 let pictureRules = """
 Pictures: Bubble can show pictures for you. Put [[images: search words]] on its own line and Bubble shows \
@@ -769,10 +777,30 @@ final class AssistantModel: ObservableObject {
     }
 }
 
+/// Dragging here moves the window. Used for the panel's bar, so the chat below stays free for selecting text.
+struct WindowDragHandle: NSViewRepresentable {
+    final class Handle: NSView {
+        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    }
+    func makeNSView(context: Context) -> NSView { Handle() }
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
 final class AssistantPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     var onEscape: (() -> Void)?
     override func cancelOperation(_ sender: Any?) { onEscape?() }
+
+    /// Return sends; Shift+Return (or Option+Return) starts a new line, as in Messages.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
+           !event.modifierFlags.intersection([.shift, .option]).isEmpty,
+           let editor = firstResponder as? NSTextView {
+            editor.insertNewlineIgnoringFieldEditor(nil)
+            return
+        }
+        super.sendEvent(event)
+    }
 }
 
 /// The bar and its answer card float at the top of the screen, see-through, like Cluely.
@@ -785,6 +813,40 @@ final class AssistantController: NSObject, NSWindowDelegate {
     private static let keyIDs: [UInt32] = [20, 21, 22, 23, 24]
 
     var isShown: Bool { panel?.isVisible == true }
+
+    /// Called when the panel appears, hides, or its recordings-and-screen-shares setting changes.
+    var onCaptureChange: (() -> Void)?
+    private var shownInCaptures = Settings.showInCaptures
+
+    /// The panel's windows a recording should include, when you've chosen to show it.
+    var captureWindowNumbers: [Int] {
+        guard Settings.showInCaptures, let p = panel, p.isVisible else { return [] }
+        return [p.windowNumber] + (p.childWindows ?? []).map(\.windowNumber)
+    }
+
+    /// macOS leaves windows marked this way out of every screenshot, recording and screen share,
+    /// whichever app takes it, so one switch covers Bubble's recordings and Zoom or Meet alike.
+    private var sharing: NSWindow.SharingType { Settings.showInCaptures ? .readOnly : .none }
+
+    private func applyCaptureVisibility() {
+        panel?.sharingType = sharing
+        panel?.childWindows?.forEach { $0.sharingType = sharing }
+        onCaptureChange?()
+    }
+
+    @objc private func defaultsChanged() {
+        guard Settings.showInCaptures != shownInCaptures else { return }
+        shownInCaptures = Settings.showInCaptures
+        log("assistant: \(shownInCaptures ? "shown in" : "hidden from") recordings and screen shares")
+        applyCaptureVisibility()
+    }
+
+    /// Popovers (chat history, faces, the Listen card) are windows of their own: they follow the panel.
+    @objc private func popoverShown(_ note: Notification) {
+        guard let p = panel, p.isVisible, let w = (note.object as? NSPopover)?.contentViewController?.view.window,
+              w.parent === p || p.isKeyWindow else { return }
+        w.sharingType = sharing
+    }
 
     /// Dictation (⌥⌥) while you're typing in the panel goes straight into its text box.
     func takeDictation(_ text: String) -> Bool {
@@ -804,6 +866,7 @@ final class AssistantController: NSObject, NSWindowDelegate {
         if !p.isVisible { model.freshenIfStale() }
         AppPresence.need("assistant", true)
         model.cardOpen = true
+        p.sharingType = sharing
         if !p.isVisible {
             // Size to the content first, then pin the bar to the top centre of this screen.
             if let v = p.contentViewController?.view {
@@ -819,6 +882,7 @@ final class AssistantController: NSObject, NSWindowDelegate {
         model.focusRequest += 1
         model.warmUp()
         holdKeys()
+        onCaptureChange?()
         log("assistant: shown")
     }
 
@@ -833,7 +897,7 @@ final class AssistantController: NSObject, NSWindowDelegate {
         • Listening is off until you turn it on. Other people on a call are transcribed too, so tell them.
         • Nothing is sent to anyone without your OK; messages are only typed in for you to send.
         • It asks before reading private files or opening links that carry data.
-        • The chat shows up in screen shares. Don't use it to cheat or to record people secretly.
+        • The chat shows up in recordings and screen shares unless you hide it. Don't use it to cheat or to record people secretly.
         """
         a.addButton(withTitle: "I agree")
         a.addButton(withTitle: "Not now")
@@ -846,6 +910,7 @@ final class AssistantController: NSObject, NSWindowDelegate {
         panel?.orderOut(nil)
         ShortcutCenter.shared.releaseTemporary(Self.keyIDs)
         AppPresence.need("assistant", false)
+        onCaptureChange?()
     }
 
     /// Re-registers the panel's keys (after you change them in settings).
@@ -898,14 +963,14 @@ final class AssistantController: NSObject, NSWindowDelegate {
     }
 
     private func makePanel() -> AssistantPanel {
-        let p = AssistantPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 60),
+        let p = AssistantPanel(contentRect: NSRect(x: 0, y: 0, width: 700, height: 60),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false
         p.backgroundColor = .clear
         p.level = .floating
         p.hasShadow = false
         p.hidesOnDeactivate = false
-        p.isMovableByWindowBackground = true
+        p.isMovableByWindowBackground = false  // only the bar moves it, so you can select text in the chat
         p.becomesKeyOnlyIfNeeded = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.onEscape = { [weak self] in
@@ -913,6 +978,10 @@ final class AssistantController: NSObject, NSWindowDelegate {
             if self.model.talking { self.model.cancelTalk() } else { self.hide() }
         }
         p.delegate = self
+        p.sharingType = sharing
+        NotificationCenter.default.addObserver(self, selector: #selector(defaultsChanged), name: UserDefaults.didChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(popoverShown), name: NSPopover.willShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(popoverShown), name: NSPopover.didShowNotification, object: nil)
         let host = NSHostingController(rootView: AssistantView(model: model, onClose: { [weak self] in self?.hide() }))
         host.sizingOptions = [.preferredContentSize]
         p.contentViewController = host
@@ -955,6 +1024,7 @@ struct AssistantView: View {
     let onClose: () -> Void
     @ObservedObject private var keys = ShortcutCenter.shared
     @AppStorage("assistantDarkness") private var darkness = 0.62
+    @AppStorage(Settings.showInCapturesKey) private var inCaptures = true
     @AppStorage("chatMyColor") private var myColor = ChatStyle.defaultMine
     @AppStorage("chatTheirColor") private var theirColor = ChatStyle.defaultTheirs
     @AppStorage("chatTextSize") private var textSize = 14.0
@@ -966,6 +1036,11 @@ struct AssistantView: View {
     @State private var showBuddy = false
     @State private var showHistory = false
     @State private var listenInfo = false
+    @State private var eyeInfo = false
+    @State private var eyeHover: DispatchWorkItem?
+    @State private var visibilityInfo = false
+    @State private var visibilityHover: DispatchWorkItem?
+    @State private var awayFromEnd = false
     @State private var listenHover: DispatchWorkItem?
 
     private let chips: [(String, String)] = [
@@ -982,7 +1057,7 @@ struct AssistantView: View {
             bar
             if model.cardOpen { card.transition(.opacity.combined(with: .move(edge: .top))) }
         }
-        .frame(width: 640)
+        .frame(width: 700)
         .padding(.bottom, 4)
         .environment(\.colorScheme, .dark)
         .animation(.easeOut(duration: 0.15), value: model.cardOpen)
@@ -996,12 +1071,7 @@ struct AssistantView: View {
             Image(systemName: "circle.fill").font(.system(size: 13)).foregroundStyle(Theme.accent)
                 .padding(.leading, 14).padding(.trailing, 6)
             barButton(model.listening ? "Listening" : "Listen", dot: model.listening ? .red : .white.opacity(0.35)) { listenInfo = false; model.toggleListening() }
-                .onHover { inside in
-                    listenHover?.cancel()
-                    let work = DispatchWorkItem { listenInfo = inside }
-                    listenHover = work
-                    DispatchQueue.main.asyncAfter(deadline: .now() + (inside ? 0.45 : 0.15), execute: work)
-                }
+                .onHover { inside in hoverCard(inside, item: &listenHover) { listenInfo = $0 } }
                 .popover(isPresented: $listenInfo, arrowEdge: .bottom) { listenCard }
             divider
             barButton(model.talking ? "Done" : "Talk", keys: keys.label(.assistVoice), dot: model.talking ? .red : nil) { model.toggleTalk() }
@@ -1011,13 +1081,32 @@ struct AssistantView: View {
             barButton(model.cardOpen ? "Collapse" : "Expand", keys: nil) { model.cardOpen.toggle() }
             divider
             barButton("Hide", keys: keys.label(.assist)) { onClose() }
+            divider
+            Button { inCaptures.toggle() } label: {
+                HStack(spacing: 7) {
+                    Text("Visibility").font(.system(size: 12.5, weight: .medium)).fixedSize()
+                    // Drawn by hand so it reads clearly even when the panel isn't the active window.
+                    Capsule().fill(inCaptures ? Theme.accent : .white.opacity(0.22)).frame(width: 28, height: 16)
+                        .overlay(alignment: inCaptures ? .trailing : .leading) {
+                            Circle().fill(.white).frame(width: 12, height: 12).padding(2).shadow(color: .black.opacity(0.25), radius: 1)
+                        }
+                        .animation(.easeOut(duration: 0.15), value: inCaptures)
+                }
+                .padding(.horizontal, 10).frame(height: 30).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(inCaptures ? "Visibility on: shows in recordings and screen shares" : "Visibility off: only you can see Bubble")
+            .onHover { inside in hoverCard(inside, item: &visibilityHover) { visibilityInfo = $0 } }
+            .popover(isPresented: $visibilityInfo, arrowEdge: .bottom) { visibilityCard }
             Spacer(minLength: 4)
-            Button { model.seeScreen.toggle() } label: {
+            Button { eyeInfo = false; model.seeScreen.toggle() } label: {
                 Image(systemName: model.seeScreen ? "eye" : "eye.slash").font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(model.seeScreen ? 0.9 : 0.45)).frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain).help(model.seeScreen ? "Sees your screen when you ask" : "Not looking at your screen")
+            .buttonStyle(.plain)
             .accessibilityLabel(model.seeScreen ? "Screen sharing on: Bubble sees your screen when you ask" : "Screen sharing off")
+            .onHover { inside in hoverCard(inside, item: &eyeHover) { eyeInfo = $0 } }
+            .popover(isPresented: $eyeInfo, arrowEdge: .bottom) { eyeCard }
             Menu {
                 Button("New Chat") { model.newChat() }
                 Button("Delete This Chat", role: .destructive) { model.deleteChat(model.chat) }.disabled(model.exchanges.isEmpty)
@@ -1028,6 +1117,8 @@ struct AssistantView: View {
                 .padding(.trailing, 8)
         }
         .frame(height: 42)
+        // Drag the bar (anywhere that isn't a button) to move the panel.
+        .background(WindowDragHandle())
         // The bar is small, so it's always dark enough to read over anything, with a light blur.
         .background(
             ZStack {
@@ -1047,9 +1138,9 @@ struct AssistantView: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-                Text(title).font(.system(size: 12.5, weight: .medium))
+                Text(title).font(.system(size: 12.5, weight: .medium)).fixedSize()
                 if let keys {
-                    Text(keys).font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.55))
+                    Text(keys).font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(.white.opacity(0.55)).fixedSize()
                         .padding(.horizontal, 5).frame(height: 18)
                         .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.1)))
                 }
@@ -1159,35 +1250,89 @@ struct AssistantView: View {
         }
     }
 
-    /// What Listen is for, shown when you hover over it.
-    private var listenCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "speaker.wave.2.fill").foregroundStyle(Theme.accent)
-                Text("Listen to your Mac").font(.system(size: 13.5, weight: .semibold))
-            }
-            Text("Bubble hears the sound playing on your Mac, not your microphone, so it can follow along and help.")
-                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                listenUse("person.2.wave.2", "Calls and meetings", "It hears the other people. Ask \"What should I say?\"")
-                listenUse("play.rectangle", "Videos and lectures", "Ask it to explain or summarise what was said.")
-                listenUse("headphones", "Podcasts and talks", "Ask about a point you missed.")
-            }
-            Divider()
-            Text("Want to talk to \(name.isEmpty ? "Bubble" : name) yourself? Use Talk (\(keys.label(.assistVoice))). Sound is turned into text on this Mac, and a red dot shows while it's on. Let people on a call know.")
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .frame(width: 290)
+    /// Hover cards open after a short pause and close soon after you move away.
+    private func hoverCard(_ inside: Bool, item: inout DispatchWorkItem?, show: @escaping (Bool) -> Void) {
+        item?.cancel()
+        let work = DispatchWorkItem { show(inside) }
+        item = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (inside ? 0.45 : 0.15), execute: work)
     }
 
-    private func listenUse(_ icon: String, _ t: String, _ d: String) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: icon).font(.system(size: 12)).frame(width: 18).foregroundStyle(Theme.accent)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(t).font(.system(size: 12, weight: .semibold))
-                Text(d).font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    /// A solid dark card with white text, so it reads clearly over anything behind it.
+    private func infoCard<Content: View>(icon: String, title: String, intro: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
+                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
             }
+            Text(intro).font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.85))
+                .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
+            content()
+        }
+        .padding(16)
+        .frame(width: 310, alignment: .leading)
+        .presentationBackground(Color(red: 0.11, green: 0.11, blue: 0.12))
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func infoRow(_ icon: String, _ t: String, _ d: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon).font(.system(size: 12.5)).frame(width: 20).foregroundStyle(Theme.accent).padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.white)
+                Text(d).font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func infoFoot(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Rectangle().fill(.white.opacity(0.12)).frame(height: 1)
+            Text(text).font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.65)).lineSpacing(1.5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// What Listen is for, shown when you hover over it.
+    private var listenCard: some View {
+        infoCard(icon: "speaker.wave.2.fill", title: "Listen to your Mac",
+                 intro: "Bubble hears the sound playing on your Mac, not your microphone, so it can follow along and help.") {
+            VStack(alignment: .leading, spacing: 10) {
+                infoRow("person.2.wave.2", "Calls and meetings", "It hears the other people. Ask \"What should I say?\"")
+                infoRow("play.rectangle", "Videos and lectures", "Ask it to explain or summarise what was said.")
+                infoRow("headphones", "Podcasts and talks", "Ask about a point you missed.")
+            }
+            infoFoot("Want to talk to \(name.isEmpty ? "Bubble" : name) yourself? Use Talk (\(keys.label(.assistVoice))). Sound is turned into text on this Mac, and a red dot shows while it's on. Let people on a call know.")
+        }
+    }
+
+    /// What the eye does, shown when you hover over it.
+    private var eyeCard: some View {
+        infoCard(icon: model.seeScreen ? "eye" : "eye.slash",
+                 title: model.seeScreen ? "Bubble can see your screen" : "Bubble isn't looking at your screen",
+                 intro: model.seeScreen
+                    ? "Each time you ask, \(name.isEmpty ? "Bubble" : name) looks at your screen, so it knows what you're working on and can help right there."
+                    : "\(name.isEmpty ? "Bubble" : name) only reads what you type or say. Turn the eye on when you want help with what's on your screen.") {
+            VStack(alignment: .leading, spacing: 10) {
+                infoRow("camera.viewfinder", "One picture per question", "Taken only when you ask, never in the background, and never of Bubble itself.")
+                infoRow("text.magnifyingglass", "Help where you are", "\"What does this error mean?\", \"Reply to this email\", \"Explain this chart\".")
+            }
+            infoFoot("Click the eye to turn it \(model.seeScreen ? "off" : "on"). Turn it off for private screens, like banking or medical pages.")
+        }
+    }
+
+    /// What Visibility does, shown when you hover over it.
+    private var visibilityCard: some View {
+        infoCard(icon: inCaptures ? "person.2.fill" : "person.fill",
+                 title: inCaptures ? "Visibility is on" : "Visibility is off",
+                 intro: inCaptures
+                    ? "Anyone watching sees Bubble too: in your Bubble recordings and when you share your screen in Zoom, Meet, Teams or FaceTime."
+                    : "Only you can see Bubble. It's left out of your Bubble recordings, screen shares in every app, and screenshots.") {
+            VStack(alignment: .leading, spacing: 10) {
+                infoRow("record.circle", "Bubble recordings", inCaptures ? "The panel is recorded over what you're showing." : "The panel isn't recorded.")
+                infoRow("rectangle.inset.filled.and.person.filled", "Screen sharing", inCaptures ? "People on the call see the panel." : "People on the call can't see the panel.")
+            }
+            infoFoot("Click to switch it \(inCaptures ? "off" : "on"). Hide Bubble to keep your chat private, not to cheat in exams or interviews.")
         }
     }
 
@@ -1271,7 +1416,27 @@ struct AssistantView: View {
                     }
                     .frame(maxHeight: 460)
                     .fixedSize(horizontal: false, vertical: true)
-                    .onChange(of: model.exchanges.last?.answer) { proxy.scrollTo("end", anchor: .bottom) }
+                    .onScrollGeometryChange(for: Bool.self) { g in
+                        g.contentOffset.y + g.containerSize.height < g.contentSize.height - 60
+                    } action: { _, away in awayFromEnd = away }
+                    // Follow a new answer as it arrives, unless you've scrolled up to read something.
+                    .onChange(of: model.exchanges.last?.answer) { if !awayFromEnd { proxy.scrollTo("end", anchor: .bottom) } }
+                    .onChange(of: model.exchanges.count) { proxy.scrollTo("end", anchor: .bottom) }
+                    .overlay(alignment: .bottom) {
+                        if awayFromEnd {
+                            Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("end", anchor: .bottom) } } label: {
+                                Label("Jump to present", systemImage: "arrow.down").font(.system(size: 12, weight: .semibold))
+                                    .padding(.horizontal, 12).frame(height: 28)
+                                    .background(Capsule().fill(Color(red: 0.16, green: 0.16, blue: 0.17)))
+                                    .overlay(Capsule().stroke(.white.opacity(0.18)))
+                                    .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.white).padding(.bottom, 10)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            .accessibilityLabel("Jump to the latest message")
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.15), value: awayFromEnd)
                 }
             }
             if model.exchanges.isEmpty, let old = model.resumable {
@@ -1451,7 +1616,7 @@ struct AssistantView: View {
             }
             TextField(model.talking ? "Listening… say what you want" : (model.approval != nil ? "Say or type yes / no…" : "Ask, or press \(keys.label(.assistVoice)) and say it…"),
                       text: $model.input, axis: .vertical)
-                .textFieldStyle(.plain).font(.system(size: 13.5)).lineLimit(1...4)
+                .textFieldStyle(.plain).font(.system(size: 13.5)).lineLimit(1...6)
                 .focused($focused)
                 .onSubmit { model.ask() }
             if model.thinking {

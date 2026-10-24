@@ -10,7 +10,8 @@ No account, no analytics, no subscription.
 - **Hover to pick what to record**: a window, a Chrome tab (just the page), an app, an area or the whole screen. A 3-2-1 countdown tints exactly what will be recorded.
 - **Camera bubble**: round and draggable, with optional blur, dark or cut-out background (Apple's Vision framework, on your Mac).
 - **Clean audio**: a built-in noise reducer for your mic, and optionally the sound playing on your Mac.
-- **Recording pill**: pause, restart, discard and done. When you record the whole screen it follows you across desktops, full-screen apps and displays.
+- **Recording pill**: pause, restart, discard and done. It follows you across apps, desktops, full-screen apps and displays, and never appears in the video.
+- **Private details blurred as you record**: passwords, emails, phone and card numbers, API keys and codes, read on your Mac with Apple's Vision. Password managers are left out of screen recordings. It catches most things, not everything, so still check before you share.
 - **Smart names** from the page or window you recorded, refined with what you talked about.
 - Videos are saved in `~/Desktop/Bubble Recordings` and shown in Bubble's library.
 
@@ -45,7 +46,7 @@ Ask Bubble is built so it can't do anything behind your back:
 - **Protected from prompt injection.** A web page, email or file could contain text meant to trick an assistant. So Bubble always asks before Claude reads key, password or history files (`~/.ssh`, keychains, browser data, shell history, `.env` files and similar), searches your whole home folder, or opens a web address that carries data in it. This applies even to tools you've set to "Always allow".
 - **Bubble keeps no passwords.** It uses the apps and browser you're already signed into. Claude Code keeps its own sign-in in your Keychain; Bubble never sees it.
 - **Its local tool server is private.** It listens only on `127.0.0.1` and needs a random secret that changes every launch.
-- **Visible on purpose.** The chat window shows up in screen shares and recordings like any other window, and a red dot shows whenever it's listening.
+- **Visible on purpose.** The chat window shows up in screen shares and recordings like any other window, and a red dot shows whenever it's listening. You can hide the chat from recordings and screen shares when it's private (one switch covers Bubble's recordings and Zoom, Meet and the rest), but it isn't for cheating.
 
 ## Privacy
 

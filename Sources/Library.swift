@@ -576,6 +576,7 @@ struct VideoTile: View {
 // MARK: - Screen recorder settings
 
 struct RecorderPage: View {
+    @AppStorage("blurPrivate") private var blurPrivate = true
     @ObservedObject var model: UIModel
 
     var body: some View {
@@ -612,6 +613,9 @@ struct RecorderPage: View {
                 }
                 SwitchRow(title: "Noise suppression", subtitle: "Removes fans, hum and hiss. Keeps voices.", isOn: $model.noise)
                 SwitchRow(title: "Mac audio", subtitle: "Include sound playing on your Mac.", isOn: $model.systemAudio, divider: false)
+            }
+            SettingsGroup(title: "Privacy", footer: "Text is read on this Mac and never leaves it. It catches most things, not everything: something can show for a moment before it's spotted, so still watch your recording before you share it.") {
+                SwitchRow(title: "Blur private details", subtitle: "Passwords, emails, phone and card numbers, API keys and codes get blurred as you record. Password managers are left out of screen recordings.", isOn: $blurPrivate, divider: false)
             }
             SettingsGroup(title: "Recording") {
                 SwitchRow(title: "3-2-1 countdown", isOn: $model.countdown)
@@ -847,6 +851,7 @@ struct StylePage: View {
 struct AssistantPage: View {
     @ObservedObject var model: UIModel
     @AppStorage("assistantDarkness") private var darkness = 0.62
+    @AppStorage(Settings.showInCapturesKey) private var inCaptures = true
     @AppStorage("chatMyColor") private var myColor = ChatStyle.defaultMine
     @AppStorage("chatTheirColor") private var theirColor = ChatStyle.defaultTheirs
     @AppStorage("chatTextSize") private var textSize = 14.0
@@ -1016,8 +1021,13 @@ struct AssistantPage: View {
                 SettingRow(title: "Listen hears your Mac's sound", subtitle: "The other people on a call or meeting, or a video you're watching. Not your microphone.") { Image(systemName: "speaker.wave.2").foregroundStyle(Palette.subtle) }
                 SettingRow(title: "To talk to Bubble yourself", subtitle: "Use Talk (\(ShortcutCenter.shared.label(.assistVoice))) in the panel.", divider: false) { Image(systemName: "mic").foregroundStyle(Palette.subtle) }
             }
-            SettingsGroup(title: "Seeing your screen", footer: "Each time you ask, Bubble sends one screenshot of the display you're on (without its own panel). Turn it off with the eye button in the panel. The panel itself shows up in screen shares and recordings, like any window.") {
+            SettingsGroup(title: "Seeing your screen", footer: "Each time you ask, Bubble sends one screenshot of the display you're on (without its own panel). Turn it off with the eye button in the panel.") {
                 SettingRow(title: "Screenshot when you ask", subtitle: "On by default.", divider: false) { Image(systemName: "eye").foregroundStyle(Palette.subtle) }
+            }
+            SettingsGroup(title: "Recordings and screen shares", footer: "This covers Bubble's own recordings and screen sharing in Zoom, Google Meet, Teams, FaceTime and other apps, as well as screenshots. Hide it when your chat is private, not to cheat in exams or interviews. You can also switch it with Visibility on the panel's bar.") {
+                SwitchRow(title: "Show Ask Bubble in recordings and screen shares",
+                          subtitle: inCaptures ? "Everyone watching sees the panel, as you do." : "Only you can see the panel. It's left out of every recording and screen share.",
+                          isOn: $inCaptures)
             }
         }
         .onAppear { hasKey = Keychain.hasKey }

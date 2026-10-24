@@ -314,7 +314,7 @@ FAQ = head("FAQ", "Questions people ask", "Can't find yours? Ask on GitHub and w
     q("Can Ask Bubble send messages or emails for me?", "<p>It can prepare them, but it never sends on its own. Emails need you to approve them. For Messenger, Instagram, WhatsApp and Messages it opens the chat and types the message, and you press Enter.</p>"),
     q("Can I use it with ChatGPT or another AI?", "<p>Not yet. Ask Bubble works with Claude, either through Claude Code on your Mac or with an Anthropic API key. Recording and dictation don't need any AI.</p>"),
     q("Does it know my previous Claude chats?", "<p>Through Claude Code it knows your Claude Code memory notes and connected apps. It can't read your chat history from the Claude app or website, because Claude doesn't let other apps do that.</p>"),
-    q("Can people tell I'm using Ask Bubble on a call?", "<p>Yes, if you share your screen: Bubble's chat window shows up in screen shares and recordings like any other window. Bubble isn't designed to be hidden, and you shouldn't use it to cheat in exams or interviews or to record people without telling them.</p>"),
+    q("Can people tell I'm using Ask Bubble on a call?", "<p>By default, yes: if you share your screen, Bubble's chat shows up in the share and in recordings like any other window. If your chat is private, one switch hides it from every recording and screen share, Bubble's own and Zoom, Meet or Teams alike. Please don't use that to cheat in exams or interviews, and don't record people without telling them.</p>"),
     q("Where are my recordings?", "<p>In <code>Bubble Recordings</code> on your Desktop, and in Bubble's library. Reels are saved in its <code>Reels</code> folder. Nothing is uploaded.</p>"),
     q("Dictation didn't type into my app. Why?", "<p>Bubble needs Accessibility permission to type into other apps (System Settings → Privacy &amp; Security → Accessibility). Without it, your words are copied so you can paste them. Some secure fields, like password boxes, block typing on purpose.</p>"),
     q("How do I remove Bubble completely?", "<p>See <a href=\"get-started.html#uninstall\">Uninstall</a>. Because Bubble has no servers, deleting it from your Mac removes it completely.</p>"),
@@ -425,7 +425,7 @@ SECURITY = f"""
 <li><strong>Listening is off until you turn it on,</strong> and a red dot shows while it's on.</li>
 <li><strong>Nothing is sent without you.</strong> Emails need your Approve. Messages are typed in for you to send.</li>
 <li><strong>Private files stay private.</strong> It asks before reading key, password or history files, and before opening links that carry data.</li>
-<li><strong>It's visible.</strong> The chat shows up in screen shares, and it isn't for cheating or secret recording.</li>
+<li><strong>It's visible.</strong> The chat shows up in screen shares unless you hide it for privacy, and it isn't for cheating or secret recording.</li>
 </ul>
 
 <h2>Actions need your approval</h2>

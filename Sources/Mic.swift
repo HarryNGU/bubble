@@ -15,6 +15,8 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private let queue = DispatchQueue(label: "bubble.mic")
     private var denoiser: Denoiser?
     private var buffersSeen = 0
+    private var lastBuffer = Date()
+    private var noiseSuppression = false
     private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: MicCapture.sampleRate,
                                        channels: 1, interleaved: false)!
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
@@ -46,6 +48,8 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
 
         queue.sync {
             buffersSeen = 0
+            lastBuffer = Date()
+            self.noiseSuppression = noiseSuppression
             denoiser = noiseSuppression ? Denoiser() : nil
         }
         session.startRunning()
@@ -75,8 +79,26 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
         queue.async { self.denoiser = nil }
     }
 
+    /// True when the mic was running but no sound has arrived for a while, for example after the
+    /// Mac began to sleep and powered it off. (Silence still arrives as buffers; this is no buffers at all.)
+    func isStalled(after seconds: TimeInterval) -> Bool {
+        guard session != nil else { return false }
+        return queue.sync { Date().timeIntervalSince(lastBuffer) > seconds }
+    }
+
+    /// Testing: stops the sound coming in, as a sleeping Mac does, without Bubble knowing.
+    func stallForTesting() { session?.stopRunning() }
+
+    /// Starts the mic again with the same settings.
+    func restart() async throws {
+        let suppress = queue.sync { noiseSuppression }
+        stop()
+        try await start(noiseSuppression: suppress)
+    }
+
     func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
         buffersSeen += 1
+        lastBuffer = Date()
         reportLevel(sb)
         guard let denoiser else { onSampleBuffer?(sb); return }
 
@@ -107,6 +129,15 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
         let db = 10 * log10(max(sum / Float(count), 1e-12))
         let level = max(0, min(1, (db + 60) / 60))
         DispatchQueue.main.async { self.onLevel?(level) }
+    }
+
+    /// Silence in the mic's format, to fill a gap left while the mic was off.
+    static func silence(at pts: CMTime, seconds: Double) -> CMSampleBuffer? {
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
+        let frames = AVAudioFrameCount(seconds * sampleRate)
+        guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+        pcm.frameLength = frames  // a new buffer is already zeroed
+        return sampleBuffer(from: pcm, pts: pts)
     }
 
     private static func sampleBuffer(from buffer: AVAudioPCMBuffer, pts: CMTime) -> CMSampleBuffer? {

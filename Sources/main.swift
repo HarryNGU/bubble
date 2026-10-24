@@ -3,6 +3,7 @@
 // background blur / grey / cut-out) and a noise-suppressed microphone, straight to MP4.
 
 import AppKit
+import IOKit.pwr_mgt
 import AVFoundation
 import Carbon.HIToolbox
 import SwiftUI
@@ -46,7 +47,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let dictation = DictationController()
     private lazy var assistant = AssistantController()
     private var controls: ControlBar!
-    private var recording = false { didSet { if oldValue != recording { buildMainMenu() } } }
+    private var recording = false { didSet { if oldValue != recording { buildMainMenu(); keepAwake(recording) } } }
+    private var awake: IOPMAssertionID?
+
+    /// Talking to the camera doesn't count as using the Mac, so without this an idle sleep timer
+    /// can start the Mac sleeping mid-recording, which switches the camera and mic off.
+    /// Keeping the display awake also keeps the Mac awake (the same thing Loom and QuickTime do).
+    private func keepAwake(_ on: Bool) {
+        if on, awake == nil {
+            var id = IOPMAssertionID(0)
+            let r = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+                                                IOPMAssertionLevel(kIOPMAssertionLevelOn), "Bubble is recording" as CFString, &id)
+            if r == kIOReturnSuccess { awake = id; log("keeping the Mac awake while recording") }
+            else { log("couldn't keep the Mac awake while recording (0x\(String(UInt32(bitPattern: r), radix: 16)))") }
+        } else if !on, let id = awake {
+            IOPMAssertionRelease(id)
+            awake = nil
+        }
+    }
     private var busy = false
     private var titleTimer: Timer?
     private var lastHeard = Date()
@@ -120,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             Updates.checkIfDue { [weak self] in self?.buildMainMenu() }
         }
         dictation.ownTextTarget = { [weak self] text in self?.assistant.takeDictation(text) ?? false }
+        assistant.onCaptureChange = { [weak self] in self?.syncAssistantCapture() }
         dictation.start()
         // Load Whisper now, so the first dictation is as accurate as the rest.
         if Settings.wantsDictate || Settings.wantsAssist { WhisperServer.shared.warmUp() }
@@ -616,7 +635,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         model.micSilent = false
         model.micLevel = 0
         // The control bar must be on screen before ScreenCaptureKit is asked to exclude it.
-        controls.show(on: screen, follow: target.isWholeScreen)
+        controls.show(on: screen)
         let exclude = [controls.panel.windowNumber]
         let bubbleWindows = Settings.camera ? [bubble.panel.windowNumber] : []
         Task { @MainActor in
@@ -626,13 +645,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                                          systemAudio: Settings.systemAudio)
                 if Settings.camera, let r = recorder.recordedRect { bubble.keepInside(r) }
                 recording = true
+                syncAssistantCapture()
                 busy = false
                 accumulated = 0
                 activeSince = Date()
                 model.elapsed = 0
                 model.paused = false
                 model.saving = false
-                controls.show(on: screen, follow: target.isWholeScreen)
+                controls.show(on: screen)
                 setIcon()
                 titleTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
                 if CommandLine.arguments.contains("restart"), selftestSeconds != nil, !selftestRestarted {  // restart once, 2s in
@@ -641,6 +661,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.restart() }
                 } else if let secs = selftestSeconds {
                     DispatchQueue.main.asyncAfter(deadline: .now() + secs) { self.stop(discard: false) }
+                    if CommandLine.arguments.contains("assist") {  // Ask Bubble appears 2s in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.assistant.show() }
+                    }
+                    if CommandLine.arguments.contains("stall") {  // camera and mic cut out 4s in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { log("test: stalling camera and mic"); self.recorder.stallMicForTesting(); self.bubble.stallForTesting() }
+                    }
                     if CommandLine.arguments.contains("pause") {  // pause 2s in, for 3s
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.togglePause() }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self.togglePause() }
@@ -654,10 +680,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    /// Puts Ask Bubble into a window or tab recording when you've chosen to show it in recordings.
+    private func syncAssistantCapture() {
+        guard recording else { return }
+        // A moment's wait so a panel that just appeared is on screen for ScreenCaptureKit to find.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, self.recording else { return }
+            self.recorder.setOverlays(self.assistant.captureWindowNumbers)
+        }
+    }
+
     private func tick() {
         model.elapsed = accumulated + (activeSince.map { Date().timeIntervalSince($0) } ?? 0)
         let silent = Settings.mic && !model.paused && Date().timeIntervalSince(lastHeard) > 3
         if silent != model.micSilent { model.micSilent = silent; if silent { log("mic: silent for 3 s") } }
+        if recording, !model.paused {
+            if Settings.mic { recorder.reviveMicIfNeeded() }
+            if Settings.camera { bubble.reviveIfNeeded() }
+        }
         setIcon()
     }
 

@@ -22,6 +22,7 @@ final class CameraBubble: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         return r
     }()
     private var configured = false
+    private var lastFrame = Date()  // camera queue only
     // Read on the camera queue, written on main; only ever replaced whole.
     private var background = Settings.background
     private var pixelSize: CGFloat = Settings.bubbleSize * 2
@@ -131,12 +132,29 @@ final class CameraBubble: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             if session.canAddOutput(output) { session.addOutput(output) }
             session.commitConfiguration()
         }
-        frameQueue.async { if !self.session.isRunning { self.session.startRunning() } }
+        frameQueue.async { if !self.session.isRunning { self.lastFrame = Date(); self.session.startRunning() } }
+    }
+
+    /// Testing: stops the camera, as a sleeping Mac does.
+    func stallForTesting() { frameQueue.async { self.session.stopRunning() } }
+
+    /// Restarts the camera if it stopped sending pictures, for example after the Mac began to sleep
+    /// and powered it off. Called a few times a second while recording.
+    func reviveIfNeeded() {
+        guard panel.isVisible, configured else { return }
+        frameQueue.async {
+            guard Date().timeIntervalSince(self.lastFrame) > 2 else { return }
+            log("camera: no picture for 2 s, starting it again")
+            self.session.stopRunning()
+            self.lastFrame = Date()
+            self.session.startRunning()
+        }
     }
 
     // MARK: Frame processing (camera queue)
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        lastFrame = Date()
         guard let px = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         var img = CIImage(cvPixelBuffer: px)
 
